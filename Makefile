@@ -1,6 +1,10 @@
 
 
-CXXFLAGS2 := -fPIC -MMD -I .
+CXXFLAGS = -g -Wall -Werror -Wextra
+CXXFLAGS2 := \
+	$(CXXFLAGS) \
+	-std=c++14 \
+	-fPIC -MMD -I .
 LDFLAGS2 := -shared
 LIBS := -lkj -lcapnp
 SONAME := sandstorm-preload

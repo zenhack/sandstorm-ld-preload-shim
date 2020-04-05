@@ -17,6 +17,9 @@ namespace sandstormPreload {
     virtual ssize_t write(const void *buf, size_t count) = 0;
   };
 
+  // Scratch space for system/libc calls that need a buffer for a path:
+  thread_local char pathBuf[PATH_MAX];
+
   class Globals {
   public:
     Globals();
@@ -27,7 +30,6 @@ namespace sandstormPreload {
     void refreshCwd();
 
     kj::MutexGuarded<std::map<int, kj::Own<PseudoFile>>> fdTable;
-    char pathBuf[PATH_MAX];
     kj::Path cwdPath;
   };
 
@@ -73,8 +75,10 @@ namespace sandstormPreload {
           mode = va_arg(args, mode_t);
           va_end(args);
         }
-        kj::Path p = globals.cwd().eval(pathstr);
-        if(p[0] != "sandstorm-magic") {
+        realpath(pathstr, pathBuf);
+        kj::Path path = nullptr;
+        path = kj::mv(path).eval(pathBuf);
+        if(path[0] != "sandstorm-magic") {
           return real::open(pathstr, flags, mode);
         }
 

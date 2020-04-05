@@ -20,7 +20,7 @@ namespace sandstormPreload {
   // Scratch space for system/libc calls that need a buffer for a path:
   thread_local char pathBuf[PATH_MAX];
 
-  class Globals {
+  class Vfs {
   public:
     kj::Maybe<PseudoFile&> getFile(int fd);
     int closeFd(int fd);
@@ -28,7 +28,7 @@ namespace sandstormPreload {
     kj::MutexGuarded<std::map<int, kj::Own<PseudoFile>>> fdTable;
   };
 
-  static Globals globals;
+  static Vfs vfs;
 
   int allocFd();
 
@@ -82,11 +82,11 @@ namespace sandstormPreload {
       }
 
       int close(int fd) noexcept {
-        return globals.closeFd(fd);
+        return vfs.closeFd(fd);
       }
 
       ssize_t read(int fd, void *buf, size_t count) noexcept {
-        KJ_IF_MAYBE(file, globals.getFile(fd)) {
+        KJ_IF_MAYBE(file, vfs.getFile(fd)) {
           return file->read(buf, count);
         } else {
           return real::read(fd, buf, count);
@@ -94,7 +94,7 @@ namespace sandstormPreload {
       }
 
       ssize_t write(int fd, const void *buf, size_t count) noexcept {
-        KJ_IF_MAYBE(file, globals.getFile(fd)) {
+        KJ_IF_MAYBE(file, vfs.getFile(fd)) {
           return file->write(buf, count);
         } else {
           return real::write(fd, buf, count);
@@ -103,7 +103,7 @@ namespace sandstormPreload {
     };
   }; // namespace wrappers
 
-  kj::Maybe<PseudoFile&> Globals::getFile(int fd) {
+  kj::Maybe<PseudoFile&> Vfs::getFile(int fd) {
     auto tbl = fdTable.lockExclusive();
     auto it = tbl->find(fd);
     if(it == tbl->end()) {
@@ -112,7 +112,7 @@ namespace sandstormPreload {
     return *it->second;
   }
 
-  int Globals::closeFd(int fd) {
+  int Vfs::closeFd(int fd) {
     {
       auto tbl = fdTable.lockExclusive();
       tbl->erase(fd);

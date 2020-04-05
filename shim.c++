@@ -5,9 +5,16 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <linux/limits.h>
+
 #include <map>
-#include <kj/filesystem.h>
+#include <mutex>
+#include <thread>
+
+#include <kj/async.h>
+#include <kj/async-io.h>
+#include <kj/async-unix.h>
 #include <kj/debug.h>
+#include <kj/filesystem.h>
 #include <kj/mutex.h>
 
 namespace sandstormPreload {
@@ -20,12 +27,57 @@ namespace sandstormPreload {
   // Scratch space for system/libc calls that need a buffer for a path:
   thread_local char pathBuf[PATH_MAX];
 
+  class EventInjector {
+    // An EventInjector is used to inject events into an event loop running in
+    // a separate thread. The thread is spawned from within the constructor.
+
+  public:
+    EventInjector();
+
+    template<class Func>
+    void runInLoop(Func& f);
+    // Run `f`, which should be a functor (typically a lambda) which takes no
+    // arguments and returns a `kj::Promise<void>`, in a separate thread.
+    // Then, wait for the promise it returns.
+  private:
+    class PromiseMaker {
+      public:
+        virtual kj::Promise<void> makePromise() = 0;
+    };
+    template<class Func>
+    class FnPromiseMaker : public PromiseMaker {
+      public:
+        FnPromiseMaker(Func& fn): fn(fn) {}
+
+        virtual kj::Promise<void> makePromise() override {
+          return fn();
+        }
+      private:
+        Func& fn;
+    };
+
+    kj::Maybe<std::thread> loopThread;
+
+    // To be used only outside the event loop thread:
+    kj::MutexGuarded<kj::AutoCloseFd> injectFd;
+
+    // To be used only inside the event loop thread:
+    kj::AutoCloseFd handleFd;
+
+    kj::Promise<void> acceptJobs(
+        kj::AsyncIoContext& context,
+        kj::UnixEventPort::FdObserver& observer);
+  };
+
   class Vfs {
   public:
+    Vfs();
     kj::Maybe<PseudoFile&> getFile(int fd);
     int closeFd(int fd);
+    EventInjector& getInjector();
   private:
     kj::MutexGuarded<std::map<int, kj::Own<PseudoFile>>> fdTable;
+    kj::Lazy<EventInjector> injector;
   };
 
   static Vfs vfs;
@@ -103,6 +155,12 @@ namespace sandstormPreload {
     };
   }; // namespace wrappers
 
+  EventInjector& Vfs::getInjector() {
+    return injector.get([](kj::SpaceFor<EventInjector>& space) -> kj::Own<EventInjector> {
+      return space.construct();
+    });
+  }
+
   kj::Maybe<PseudoFile&> Vfs::getFile(int fd) {
     auto tbl = fdTable.lockExclusive();
     auto it = tbl->find(fd);
@@ -120,6 +178,65 @@ namespace sandstormPreload {
     return real::close(fd);
   }
 
+  EventInjector::EventInjector() {
+    int pipefds[2];
+    KJ_SYSCALL(pipe2(pipefds, O_CLOEXEC));
+    *injectFd.lockExclusive() = kj::AutoCloseFd(pipefds[1]);
+    handleFd = kj::AutoCloseFd(pipefds[0]);
+
+    loopThread = std::thread([this]() {
+      auto context = kj::setupAsyncIo();
+      kj::UnixEventPort::FdObserver observer(
+          context.unixEventPort,
+          handleFd.get(),
+          kj::UnixEventPort::FdObserver::Flags::OBSERVE_READ
+      );
+      this->acceptJobs(context, observer).wait(context.waitScope);
+    });
+  }
+
+  kj::Promise<void> EventInjector::acceptJobs(
+      kj::AsyncIoContext& context,
+      kj::UnixEventPort::FdObserver& observer) {
+    return observer.whenBecomesReadable().then([this, &context, &observer]() {
+      ssize_t countRead;
+      PromiseMaker *pm;
+      KJ_SYSCALL(countRead = real::read(handleFd.get(), &pm, sizeof pm));
+      // FIXME: handle this correctly:
+      KJ_ASSERT(countRead == sizeof pm, "Short read on handleFd");
+      pm->makePromise().detach([](kj::Exception&& e) {
+          KJ_LOG(ERROR, kj::str(
+                "Exception thrown from EventInjector::runInLoop(): ",
+                e));
+          std::terminate();
+      });
+      return acceptJobs(context, observer);
+    });
+  }
+
+  template<class Func>
+  void EventInjector::runInLoop(Func &f) {
+    std::mutex returnLock;
+    auto fThenUnlock = [&]() {
+      return f().then([&]() {
+        returnLock.unlock();
+        return kj::READY_NOW;
+      });
+    };
+
+    auto pm = FnPromiseMaker<decltype(fThenUnlock)>(fThenUnlock);
+    ssize_t written;
+
+    returnLock.lock();
+    auto fd = injectFd.lockExclusive();
+    KJ_SYSCALL(written = real::write(fd.get(), &pm, sizeof pm));
+    // FIXME: handle this correctly.
+    KJ_ASSERT(written == sizeof pm, "Short write during inject");
+
+    // The event loop thread will unlock this when the promise completes:
+    returnLock.lock();
+  }
+
   int allocFd() {
     // Allocate a file descriptor. Even for spoofed files, we still allocate
     // a real file descriptor, so we can be sure to avoid namespace
@@ -127,7 +244,7 @@ namespace sandstormPreload {
 
     // Create a pipe, close one end of it, use the other as our fd:
     int pipefds[2];
-    KJ_SYSCALL(pipe(pipefds));
+    KJ_SYSCALL(pipe2(pipefds, O_CLOEXEC));
     real::close(pipefds[1]);
     return pipefds[0];
   }

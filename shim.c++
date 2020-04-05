@@ -71,8 +71,7 @@ namespace sandstormPreload {
           va_end(args);
         }
         realpath(pathstr, pathBuf);
-        kj::Path path = nullptr;
-        path = kj::mv(path).eval(pathBuf);
+        auto path = kj::Path(nullptr).eval(pathBuf);
         if(path[0] != "sandstorm-magic") {
           return real::open(pathstr, flags, mode);
         }

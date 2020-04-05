@@ -4,7 +4,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <linux/limits.h>
 #include <map>
+#include <kj/filesystem.h>
 #include <kj/debug.h>
 #include <kj/mutex.h>
 
@@ -17,10 +19,16 @@ namespace sandstormPreload {
 
   class Globals {
   public:
+    Globals();
+    kj::PathPtr cwd();
     kj::Maybe<PseudoFile&> getFile(int fd);
     int closeFd(int fd);
   private:
+    void refreshCwd();
+
     kj::MutexGuarded<std::map<int, kj::Own<PseudoFile>>> fdTable;
+    char pathBuf[PATH_MAX];
+    kj::Path cwdPath;
   };
 
   static Globals globals;
@@ -48,7 +56,7 @@ namespace sandstormPreload {
     // The LD_PRELOAD wrappers themselves.
 
     extern "C" {
-      int open(const char *path, int flags, ...) {
+      int open(const char *pathstr, int flags, ...) {
         // from open(2):
         //
         // > The mode argument specifies the file mode bits be applied when
@@ -65,7 +73,14 @@ namespace sandstormPreload {
           mode = va_arg(args, mode_t);
           va_end(args);
         }
-        return real::open(path, flags, mode);
+        kj::Path p = globals.cwd().eval(pathstr);
+        if(p[0] != "sandstorm-magic") {
+          return real::open(pathstr, flags, mode);
+        }
+
+        // TODO: actually do something.
+        errno = EPERM;
+        return -1;
       }
 
       int close(int fd) noexcept {
@@ -89,6 +104,20 @@ namespace sandstormPreload {
       }
     };
   }; // namespace wrappers
+
+  Globals::Globals()
+    : cwdPath(nullptr) {
+      refreshCwd();
+  }
+
+  void Globals::refreshCwd() {
+    getcwd(pathBuf, PATH_MAX);
+    cwdPath.eval(pathBuf);
+  }
+
+  kj::PathPtr Globals::cwd() {
+    return cwdPath;
+  }
 
   kj::Maybe<PseudoFile&> Globals::getFile(int fd) {
     auto tbl = fdTable.lockExclusive();

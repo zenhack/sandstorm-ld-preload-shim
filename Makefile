@@ -1,6 +1,9 @@
 
 
-CXXFLAGS = -g -Wall -Werror -Wextra
+CXXFLAGS = \
+	   -g \
+	   -Wall -Werror -Wextra \
+	   -fpermissive
 CXXFLAGS2 := \
 	$(CXXFLAGS) \
 	-std=c++14 \

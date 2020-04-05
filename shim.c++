@@ -24,28 +24,18 @@ namespace sandstormPreload {
   int allocFd();
 
   namespace real {
-    // Wrappers around the "real" versions of the libc functions that we
-    // intercept.
+    // The "real" versions of the libc functions that we intercept.
 
     typedef int (*close_ftype)(int);
+    close_ftype close = (close_ftype)dlsym(RTLD_NEXT, "close");
+
     typedef ssize_t (*read_ftype)(int, void *, size_t);
+    read_ftype read = (read_ftype)dlsym(RTLD_NEXT, "read");
+
     typedef ssize_t (*write_ftype)(int, const void *, size_t);
+    write_ftype write = (write_ftype)dlsym(RTLD_NEXT, "write");
 
-    int close(int fd) noexcept {
-      close_ftype fn = (close_ftype)dlsym(RTLD_NEXT, "close");
-      return fn(fd);
-    }
-
-    ssize_t read(int fd, void *buf, size_t count) noexcept {
-      read_ftype fn = (read_ftype)dlsym(RTLD_NEXT, "read");
-      return fn(fd, buf, count);
-    }
-
-    ssize_t write(int fd, const void *buf, size_t count) noexcept {
-      write_ftype fn = (write_ftype)dlsym(RTLD_NEXT, "write");
-      return fn(fd, buf, count);
-    }
-  } // namespace real
+  }; // namespace real
 
   namespace wrappers {
     // The LD_PRELOAD wrappers themselves.

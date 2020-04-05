@@ -22,15 +22,10 @@ namespace sandstormPreload {
 
   class Globals {
   public:
-    Globals();
-    kj::PathPtr cwd();
     kj::Maybe<PseudoFile&> getFile(int fd);
     int closeFd(int fd);
   private:
-    void refreshCwd();
-
     kj::MutexGuarded<std::map<int, kj::Own<PseudoFile>>> fdTable;
-    kj::Path cwdPath;
   };
 
   static Globals globals;
@@ -108,20 +103,6 @@ namespace sandstormPreload {
       }
     };
   }; // namespace wrappers
-
-  Globals::Globals()
-    : cwdPath(nullptr) {
-      refreshCwd();
-  }
-
-  void Globals::refreshCwd() {
-    getcwd(pathBuf, PATH_MAX);
-    cwdPath.eval(pathBuf);
-  }
-
-  kj::PathPtr Globals::cwd() {
-    return cwdPath;
-  }
 
   kj::Maybe<PseudoFile&> Globals::getFile(int fd) {
     auto tbl = fdTable.lockExclusive();

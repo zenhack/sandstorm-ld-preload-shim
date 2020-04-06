@@ -17,7 +17,7 @@
 #include <kj/filesystem.h>
 #include <kj/mutex.h>
 
-class Tmp{};
+class EventLoopData{};
 
 namespace sandstormPreload {
   class PseudoFile {
@@ -29,43 +29,37 @@ namespace sandstormPreload {
   // Scratch space for system/libc calls that need a buffer for a path:
   thread_local char pathBuf[PATH_MAX];
 
-  template<class T>
   class EventInjector {
     // An EventInjector is used to inject events into an event loop running in
     // a separate thread. The thread is spawned from within the constructor.
 
   public:
-    template<class Func>
-
-    explicit EventInjector(Func& f);
-    // Spawn an event loop and run `f` in the event loop's thread. `f` should
-    // be a functor accepting a `kj::SpaceFor<T>&` and returning `kj::Own<T>`,
-    // a reference to which will be passed to functions run with `runInLoop`.
+    explicit EventInjector();
+    // Spawn an event loop and run `f` in the event loop's thread.
 
     template<class Func>
     void runInLoop(Func& f);
     // Run `f` in a separate thread, and wait for the promise it retuurns.
     // `f` should be a functor (typically a lambda) which takes an argument
-    // of type `T&` and returns a `kj::Promise<void>`
+    // of type `EventLoopData&` and returns a `kj::Promise<void>`
   private:
     class PromiseMaker {
       public:
-        virtual kj::Promise<void> makePromise(T&) = 0;
+        virtual kj::Promise<void> makePromise(EventLoopData&) = 0;
     };
     template<class Func>
     class FnPromiseMaker : public PromiseMaker {
       public:
         FnPromiseMaker(Func& fn): fn(fn) {}
 
-        virtual kj::Promise<void> makePromise(T& data) override {
+        virtual kj::Promise<void> makePromise(EventLoopData& data) override {
           return fn(data);
         }
       private:
         Func& fn;
     };
 
-    kj::SpaceFor<T> initDataSpace;
-    kj::Own<T> initData;
+    kj::Own<EventLoopData> initData;
 
     kj::Maybe<std::thread> loopThread;
 
@@ -85,10 +79,10 @@ namespace sandstormPreload {
     Vfs();
     kj::Maybe<PseudoFile&> getFile(int fd);
     int closeFd(int fd);
-    EventInjector<Tmp>& getInjector();
+    EventInjector& getInjector();
   private:
     kj::MutexGuarded<std::map<int, kj::Own<PseudoFile>>> fdTable;
-    kj::Lazy<EventInjector<Tmp>> injector;
+    kj::Lazy<EventInjector> injector;
   };
 
   static Vfs vfs;
@@ -166,11 +160,9 @@ namespace sandstormPreload {
     };
   }; // namespace wrappers
 
-  EventInjector<Tmp>& Vfs::getInjector() {
-    return injector.get([](kj::SpaceFor<EventInjector<Tmp>>& space) -> auto {
-      return space.construct([](kj::SpaceFor<Tmp>& space) -> auto {
-        return space.construct();
-      });
+  EventInjector& Vfs::getInjector() {
+    return injector.get([](kj::SpaceFor<EventInjector>& space) -> auto {
+      return space.construct();
     });
   }
 
@@ -191,17 +183,15 @@ namespace sandstormPreload {
     return real::close(fd);
   }
 
-  template<class T>
-  template<class Func>
-  EventInjector<T>::EventInjector(Func& f) {
+  EventInjector::EventInjector() {
     int pipefds[2];
     KJ_SYSCALL(pipe2(pipefds, O_CLOEXEC));
     *injectFd.lockExclusive() = kj::AutoCloseFd(pipefds[1]);
     handleFd = kj::AutoCloseFd(pipefds[0]);
 
-    loopThread = std::thread([this, f]() {
+    loopThread = std::thread([this]() {
       auto context = kj::setupAsyncIo();
-      this->initData = f(context, this->initDataSpace);
+      this->initData = kj::heap<EventLoopData>();
       kj::UnixEventPort::FdObserver observer(
           context.unixEventPort,
           handleFd.get(),
@@ -211,8 +201,7 @@ namespace sandstormPreload {
     });
   }
 
-  template<class T>
-  kj::Promise<void> EventInjector<T>::acceptJobs(
+  kj::Promise<void> EventInjector::acceptJobs(
       kj::AsyncIoContext& context,
       kj::UnixEventPort::FdObserver& observer) {
     return observer.whenBecomesReadable().then([this, &context, &observer]() {
@@ -231,18 +220,17 @@ namespace sandstormPreload {
     });
   }
 
-  template<class T>
   template<class Func>
-  void EventInjector<T>::runInLoop(Func &f) {
+  void EventInjector::runInLoop(Func &f) {
     std::mutex returnLock;
-    auto fThenUnlock = [&](T& t) {
-      return f(t).then([&]() {
+    auto fThenUnlock = [&](EventLoopData& data) {
+      return f(data).then([&returnLock]() {
         returnLock.unlock();
         return kj::READY_NOW;
       });
     };
 
-    auto pm = EventInjector<T>::FnPromiseMaker<decltype(fThenUnlock)>(fThenUnlock);
+    auto pm = EventInjector::FnPromiseMaker<decltype(fThenUnlock)>(fThenUnlock);
     ssize_t written;
 
     returnLock.lock();

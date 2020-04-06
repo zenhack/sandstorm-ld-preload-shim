@@ -39,9 +39,13 @@ $(SONAME).so: $(objects)
 
 $(capnp_headers) $(capnp_cxx): $(capnp_src)
 	capnp compile -oc++ \
-		-I $(SANDSTORM_PATH)/src/ \
-		--src-prefix=$(SANDSTORM_PATH)/src \
+		-I $(SANDSTORM_PATH)/src/sandstorm \
+		--src-prefix=$(SANDSTORM_PATH)/src/sandstorm \
 		$(capnp_src)
+
+filesystem.capnp: sandstorm-filesystem/filesystem/filesystem.capnp
+	sed -e 's|^using Go = .*|| ; s|\$$Go.*||' < $< > $@
+
 
 .PHONY: all clean
 .SUFFIXES:

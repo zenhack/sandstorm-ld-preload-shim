@@ -19,7 +19,13 @@
 #   is very capability-unfriendly; traversing to a parent directory is very
 #   purposfully not facilitated by the API.
 
-using Util = import "/sandstorm/util.capnp";
+using Util = import "/util.capnp";
+
+# Note to non go users: you can just delete this if you don't want to
+# install the go plugin:
+
+
+
 
 interface Node @0x955400781a01b061 {
   # A node in the filesystem. This is either a file or a directory.

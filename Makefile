@@ -9,7 +9,7 @@ CXXFLAGS2 := \
 	-std=c++14 \
 	-fPIC -MMD -I .
 LDFLAGS2 := -shared
-LIBS := -ldl -lkj -lcapnp
+LIBS := -ldl -lkj -lcapnp -lcapnp-rpc
 SONAME := sandstorm-preload
 
 capnp_objects := \

@@ -17,7 +17,43 @@
 #include <kj/filesystem.h>
 #include <kj/mutex.h>
 
-class EventLoopData{};
+#include <capnp/rpc-twoparty.h>
+
+#include "filesystem.capnp.h"
+
+class EventLoopData {
+  public:
+    EventLoopData(kj::AsyncIoContext& context, kj::StringPtr serverAddr) {
+      rootDir = context.provider->getNetwork()
+        .parseAddress(serverAddr)
+        .then([](auto addr) -> auto {
+            return addr->connect();
+        })
+        .then([](auto stream) -> auto {
+            capnp::TwoPartyVatNetwork network(
+              *stream,
+              capnp::rpc::twoparty::Side::CLIENT
+            );
+            auto rpcSystem = capnp::makeRpcClient(network);
+            capnp::MallocMessageBuilder message;
+            auto vatId = message.initRoot<capnp::rpc::twoparty::VatId>();
+            vatId.setSide(capnp::rpc::twoparty::Side::SERVER);
+            return rpcSystem.bootstrap(vatId).castAs<RwDirectory>();
+        })
+        .fork();
+    }
+
+    kj::Promise<RwDirectory::Client> getRootDir() {
+      KJ_IF_MAYBE(promise, rootDir) {
+        return promise->addBranch();
+      } else {
+        KJ_FAIL_ASSERT("rootDir is null");
+      }
+    }
+
+  private:
+    kj::Maybe<kj::ForkedPromise<RwDirectory::Client>> rootDir;
+};
 
 namespace sandstormPreload {
   class PseudoFile {
@@ -76,7 +112,6 @@ namespace sandstormPreload {
 
   class Vfs {
   public:
-    Vfs();
     kj::Maybe<PseudoFile&> getFile(int fd);
     int closeFd(int fd);
     EventInjector& getInjector();
@@ -191,7 +226,10 @@ namespace sandstormPreload {
 
     loopThread = std::thread([this]() {
       auto context = kj::setupAsyncIo();
-      this->initData = kj::heap<EventLoopData>();
+      this->initData = kj::heap<EventLoopData>(
+          context,
+          getenv("SANDSTORM_VFS_SERVER")
+      );
       kj::UnixEventPort::FdObserver observer(
           context.unixEventPort,
           handleFd.get(),

@@ -14,7 +14,7 @@ SONAME := sandstorm-preload
 
 capnp_objects := \
 	filesystem.capnp.o \
-	sandstorm/util.capnp.o
+	util.capnp.o
 capnp_src := \
 	filesystem.capnp \
 	$(SANDSTORM_PATH)/src/sandstorm/util.capnp

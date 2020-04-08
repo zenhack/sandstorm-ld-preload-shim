@@ -29,6 +29,8 @@ namespace sandstormPreload {
   // Scratch space for system/libc calls that need a buffer for a path:
   thread_local char pathBuf[PATH_MAX];
 
+  int openPseudo(kj::PathPtr path, int flags, mode_t mode);
+
   namespace wrappers {
     // The LD_PRELOAD wrappers themselves.
 
@@ -55,70 +57,7 @@ namespace sandstormPreload {
         if(path[0] != "sandstorm-magic") {
           return real::open(pathstr, flags, mode);
         }
-
-        int err = 0;
-        kj::Maybe<kj::Own<PseudoFile>> result;
-
-        auto inLoop = [&](EventLoopData& data) -> kj::Promise<void> {
-          return data.getRootDir()
-            .then([&](auto dir) -> kj::Promise<void> {
-                Node::Client node = dir;
-                kj::Maybe<const kj::String&> basename;
-                for(size_t i = 1; i < path.size(); i++) {
-                  dir = node.castAs<RwDirectory>();
-                  auto req = dir.walkRequest();
-                  req.setName(path[i]);
-                  basename = path[i];
-                  node = req.send().getNode();
-                }
-                return node.statRequest().send().then([&](auto res) -> kj::Promise<void> {
-                  auto info = res.getInfo();
-                  if(!(flags & O_RDONLY) && !info.getWritable()) {
-                    err = EPERM;
-                    return kj::READY_NOW;
-                  }
-                  result = kj::heap<CapnpFile>(node);
-                  return kj::READY_NOW;
-                }, [&](kj::Exception&&) -> kj::Promise<void> {
-                  // TODO: On errors, try to come up with more reasonable errno values.
-                  if(!(flags & O_CREAT)) {
-                    err = ENOENT;
-                    return kj::READY_NOW;
-                  }
-                  // maybe the file doesn't exist; try creating it:
-                  KJ_IF_MAYBE(name, basename) {
-                    auto req = dir.createRequest();
-                    req.setName(*name);
-                    req.setExecutable(mode & 0100);
-                    return req.send().then([&result](auto res) -> kj::Promise<void> {
-                      Node::Client node = res.getFile();
-                      result = kj::heap<CapnpFile>(node);
-                      return kj::READY_NOW;
-                    },[&err](kj::Exception&&) -> kj::Promise<void> {
-                      err = EPERM;
-                      return kj::READY_NOW;
-                    });
-                  }
-                  // This was an attempt to open() the root. Odd that it failed.
-                  err = EPERM;
-                  return kj::READY_NOW;
-                });
-
-            }, [&](kj::Exception&&) -> auto {
-              err = EIO;
-              return kj::READY_NOW;
-            });
-        };
-        vfs.getInjector().runInLoop(inLoop);
-
-        errno = err;
-        KJ_IF_MAYBE(file, result) {
-          int fd = allocFd();
-          vfs.addFile(fd, kj::mv(*file));
-          return fd;
-        } else {
-          return -1;
-        }
+        return openPseudo(path, flags, mode);
       }
 
       int close(int fd) noexcept {
@@ -142,4 +81,90 @@ namespace sandstormPreload {
       }
     };
   }; // namespace wrappers
+
+  int openPseudo(kj::PathPtr path, int flags, mode_t mode) {
+    int err = 0;
+    kj::Maybe<kj::Own<PseudoFile>> result;
+
+    auto inLoop = [&](EventLoopData& data) -> kj::Promise<void> {
+      // TODO: we should be more thoughtful about what errno values we return
+      // when things fail. For example, we should always look at the exception type
+      // to inform the decision: disconnected errors should retrun EIO, while
+      // unimplemented means a permission error or trying to walk() on a non-directory
+      // or something.
+
+      return data.getRootDir()
+        .then([&](auto dir) -> kj::Promise<void> {
+            // Walk down the directory tree from the root until we hit our target.
+            // We start at index 1 to drop the /sandstorm-magic prefix.
+            Node::Client node = dir;
+            kj::Maybe<const kj::String&> basename;
+            for(size_t i = 1; i < path.size(); i++) {
+              dir = node.castAs<RwDirectory>();
+              auto req = dir.walkRequest();
+              req.setName(path[i]);
+              basename = path[i];
+              node = req.send().getNode();
+            }
+
+            // Check if the node is there:
+            return node.statRequest().send().then([&](auto res) -> kj::Promise<void> {
+              // It is! check the permissions, returning an error if needbe,
+              // otherwise just return the file.
+              auto info = res.getInfo();
+              if(!(flags & O_RDONLY) && !info.getWritable()) {
+                err = EPERM;
+                return kj::READY_NOW;
+              }
+              result = kj::heap<CapnpFile>(node);
+              return kj::READY_NOW;
+
+            }, [&](kj::Exception&&) -> kj::Promise<void> {
+              // Couldn't stat the file. If we weren't asked to create it,
+              // then this is fatal; return an error:
+              if(!(flags & O_CREAT)) {
+                err = ENOENT;
+                return kj::READY_NOW;
+              }
+
+              // Maybe the file doesn't exist; try creating it:
+              KJ_IF_MAYBE(name, basename) {
+                auto req = dir.createRequest();
+                req.setName(*name);
+                req.setExecutable(mode & 0100);
+                return req.send().then([&result](auto res) -> kj::Promise<void> {
+                  Node::Client node = res.getFile();
+                  result = kj::heap<CapnpFile>(node);
+                  return kj::READY_NOW;
+                },[&err](kj::Exception&&) -> kj::Promise<void> {
+                  // Creating failed. We assume a permission error for now. TODO:
+                  // look at the exception and be a little smarter if we can.
+                  err = EPERM;
+                  return kj::READY_NOW;
+                });
+              } else {
+                // If basename is null, then was an attempt to open() the root.
+                // Odd that it failed.
+                err = EPERM;
+                return kj::READY_NOW;
+              }
+            });
+
+        }, [&](kj::Exception&&) -> auto {
+          // Getting the root itself failed. Treat it as an IO error.
+          err = EIO;
+          return kj::READY_NOW;
+        });
+    };
+    vfs.getInjector().runInLoop(inLoop);
+
+    errno = err;
+    KJ_IF_MAYBE(file, result) {
+      int fd = allocFd();
+      vfs.addFile(fd, kj::mv(*file));
+      return fd;
+    } else {
+      return -1;
+    }
+  }
 }; // namespace sandstormPreload

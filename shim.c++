@@ -62,6 +62,15 @@ namespace sandstormPreload {
     virtual ssize_t write(const void *buf, size_t count) = 0;
   };
 
+  class CapnpFile : public PseudoFile {
+  public:
+    CapnpFile(Node::Client& node) : node(node) {}
+    virtual ssize_t read(void *buf, size_t count);
+    virtual ssize_t write(const void *buf, size_t count);
+  private:
+    Node::Client node;
+  };
+
   // Scratch space for system/libc calls that need a buffer for a path:
   thread_local char pathBuf[PATH_MAX];
 
@@ -113,6 +122,7 @@ namespace sandstormPreload {
   class Vfs {
   public:
     kj::Maybe<PseudoFile&> getFile(int fd);
+    void addFile(int fd, kj::Own<PseudoFile>&& file);
     int closeFd(int fd);
     EventInjector& getInjector();
   private:
@@ -168,9 +178,69 @@ namespace sandstormPreload {
           return real::open(pathstr, flags, mode);
         }
 
-        // TODO: actually do something.
-        errno = EPERM;
-        return -1;
+        int err = 0;
+        kj::Maybe<kj::Own<PseudoFile>> result;
+
+        auto inLoop = [&](EventLoopData& data) -> kj::Promise<void> {
+          return data.getRootDir()
+            .then([&](auto dir) -> kj::Promise<void> {
+                Node::Client node = dir;
+                kj::Maybe<const kj::String&> basename;
+                for(size_t i = 1; i < path.size(); i++) {
+                  dir = node.castAs<RwDirectory>();
+                  auto req = dir.walkRequest();
+                  req.setName(path[i]);
+                  basename = path[i];
+                  node = req.send().getNode();
+                }
+                return node.statRequest().send().then([&](auto res) -> kj::Promise<void> {
+                  auto info = res.getInfo();
+                  if(!(flags & O_RDONLY) && !info.getWritable()) {
+                    err = EPERM;
+                    return kj::READY_NOW;
+                  }
+                  result = kj::heap<CapnpFile>(node);
+                  return kj::READY_NOW;
+                }, [&](kj::Exception&&) -> kj::Promise<void> {
+                  // TODO: On errors, try to come up with more reasonable errno values.
+                  if(!(flags & O_CREAT)) {
+                    err = ENOENT;
+                    return kj::READY_NOW;
+                  }
+                  // maybe the file doesn't exist; try creating it:
+                  KJ_IF_MAYBE(name, basename) {
+                    auto req = dir.createRequest();
+                    req.setName(*name);
+                    req.setExecutable(mode & 0100);
+                    return req.send().then([&result](auto res) -> kj::Promise<void> {
+                      Node::Client node = res.getFile();
+                      result = kj::heap<CapnpFile>(node);
+                      return kj::READY_NOW;
+                    },[&err](kj::Exception&&) -> kj::Promise<void> {
+                      err = EPERM;
+                      return kj::READY_NOW;
+                    });
+                  }
+                  // This was an attempt to open() the root. Odd that it failed.
+                  err = EPERM;
+                  return kj::READY_NOW;
+                });
+
+            }, [&](kj::Exception&&) -> auto {
+              err = EIO;
+              return kj::READY_NOW;
+            });
+        };
+        vfs.getInjector().runInLoop(inLoop);
+
+        errno = err;
+        KJ_IF_MAYBE(file, result) {
+          int fd = allocFd();
+          vfs.addFile(fd, kj::mv(*file));
+          return fd;
+        } else {
+          return -1;
+        }
       }
 
       int close(int fd) noexcept {
@@ -208,6 +278,11 @@ namespace sandstormPreload {
       return nullptr;
     }
     return *it->second;
+  }
+
+  void Vfs::addFile(int fd, kj::Own<PseudoFile>&& file) {
+    auto tbl = fdTable.lockExclusive();
+    tbl->insert(std::pair<int, kj::Own<PseudoFile>>(fd, kj::mv(file)));
   }
 
   int Vfs::closeFd(int fd) {
@@ -259,10 +334,10 @@ namespace sandstormPreload {
   }
 
   template<class Func>
-  void EventInjector::runInLoop(Func &f) {
+  void EventInjector::runInLoop(Func& f) {
     std::mutex returnLock;
-    auto fThenUnlock = [&](EventLoopData& data) {
-      return f(data).then([&returnLock]() {
+    auto fThenUnlock = [&](EventLoopData& data) -> kj::Promise<void> {
+      return f(data).then([&returnLock]() -> kj::Promise<void> {
         returnLock.unlock();
         return kj::READY_NOW;
       });
@@ -273,12 +348,22 @@ namespace sandstormPreload {
 
     returnLock.lock();
     auto fd = injectFd.lockExclusive();
-    KJ_SYSCALL(written = real::write(fd.get(), &pm, sizeof pm));
+    KJ_SYSCALL(written = real::write(fd->get(), &pm, sizeof pm));
     // FIXME: handle this correctly.
     KJ_ASSERT(written == sizeof pm, "Short write during inject");
 
     // The event loop thread will unlock this when the promise completes:
     returnLock.lock();
+  }
+
+  ssize_t CapnpFile::read(void *, size_t) {
+    errno = ENOSYS;
+    return -1;
+  }
+
+  ssize_t CapnpFile::write(const void *, size_t) {
+    errno = ENOSYS;
+    return -1;
   }
 
   int allocFd() {

@@ -20,10 +20,12 @@ namespace sandstormPreload {
 
     loopThread = std::thread([this]() {
       auto context = kj::setupAsyncIo();
-      this->initData = kj::heap<EventLoopData>(
-          context,
-          getenv("SANDSTORM_VFS_SERVER")
+      char *vfs_addr = getenv("SANDSTORM_VFS_SERVER");
+      KJ_ASSERT(
+          vfs_addr != nullptr,
+          "environment variable SANDSTORM_VFS_SERVER undefined."
       );
+      this->initData = kj::heap<EventLoopData>(context, vfs_addr);
       kj::UnixEventPort::FdObserver observer(
           context.unixEventPort,
           handleFd.get(),

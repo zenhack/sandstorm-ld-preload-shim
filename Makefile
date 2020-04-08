@@ -29,6 +29,7 @@ objects := \
 	EventLoopData.o \
 	EventInjector.o \
 	CapnpFile.o \
+	Vfs.o
 
 all: $(SONAME).so
 clean:

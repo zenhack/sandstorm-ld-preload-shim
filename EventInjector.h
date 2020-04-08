@@ -5,8 +5,12 @@
 #include <thread>
 
 #include <kj/async.h>
+#include <kj/async-io.h>
+#include <kj/async-unix.h>
+#include <kj/debug.h>
 
 #include "real.h"
+#include "EventLoopData.h"
 
 namespace sandstormPreload {
   class EventInjector {

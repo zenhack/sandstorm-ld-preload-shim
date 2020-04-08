@@ -21,41 +21,9 @@
 
 #include "filesystem.capnp.h"
 
+#include "EventLoopData.h"
+
 namespace sandstormPreload {
-  class EventLoopData {
-    public:
-      EventLoopData(kj::AsyncIoContext& context, kj::StringPtr serverAddr) {
-        rootDir = context.provider->getNetwork()
-          .parseAddress(serverAddr)
-          .then([](auto addr) -> auto {
-              return addr->connect();
-          })
-          .then([](auto stream) -> auto {
-              capnp::TwoPartyVatNetwork network(
-                *stream,
-                capnp::rpc::twoparty::Side::CLIENT
-              );
-              auto rpcSystem = capnp::makeRpcClient(network);
-              capnp::MallocMessageBuilder message;
-              auto vatId = message.initRoot<capnp::rpc::twoparty::VatId>();
-              vatId.setSide(capnp::rpc::twoparty::Side::SERVER);
-              return rpcSystem.bootstrap(vatId).castAs<RwDirectory>();
-          })
-          .fork();
-      }
-
-      kj::Promise<RwDirectory::Client> getRootDir() {
-        KJ_IF_MAYBE(promise, rootDir) {
-          return promise->addBranch();
-        } else {
-          KJ_FAIL_ASSERT("rootDir is null");
-        }
-      }
-
-    private:
-      kj::Maybe<kj::ForkedPromise<RwDirectory::Client>> rootDir;
-  };
-
   class PseudoFile {
   public:
     virtual ssize_t read(void *buf, size_t count) = 0;

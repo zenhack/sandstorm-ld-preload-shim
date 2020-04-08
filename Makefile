@@ -24,7 +24,8 @@ capnp_cxx := $(capnp_objects:.o=.c++)
 
 objects := \
 	$(capnp_objects) \
-	shim.o
+	shim.o \
+	EventLoopData.o
 
 all: $(SONAME).so
 clean:

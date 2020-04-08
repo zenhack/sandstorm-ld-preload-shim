@@ -1,4 +1,7 @@
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "Vfs.h"
 #include "real.h"
 
@@ -32,4 +35,12 @@ namespace sandstormPreload {
   }
 
   Vfs vfs;
+
+  int allocFd() {
+    // Create a pipe, close one end of it, use the other as our fd:
+    int pipefds[2];
+    KJ_SYSCALL(pipe2(pipefds, O_CLOEXEC));
+    real::close(pipefds[1]);
+    return pipefds[0];
+  }
 };

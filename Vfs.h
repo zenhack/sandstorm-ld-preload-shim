@@ -21,5 +21,10 @@ namespace sandstormPreload {
     kj::Lazy<EventInjector> injector;
   };
 
+  int allocFd();
+  // Allocate a file descriptor. Even for spoofed files, we still allocate
+  // a real file descriptor, so we can be sure to avoid namespace
+  // collisions with fds handed out by the OS.
+
   extern Vfs vfs;
 };

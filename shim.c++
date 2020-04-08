@@ -29,8 +29,6 @@ namespace sandstormPreload {
   // Scratch space for system/libc calls that need a buffer for a path:
   thread_local char pathBuf[PATH_MAX];
 
-  int allocFd();
-
   namespace wrappers {
     // The LD_PRELOAD wrappers themselves.
 
@@ -144,16 +142,4 @@ namespace sandstormPreload {
       }
     };
   }; // namespace wrappers
-
-  int allocFd() {
-    // Allocate a file descriptor. Even for spoofed files, we still allocate
-    // a real file descriptor, so we can be sure to avoid namespace
-    // collisions with fds handed out by the OS.
-
-    // Create a pipe, close one end of it, use the other as our fd:
-    int pipefds[2];
-    KJ_SYSCALL(pipe2(pipefds, O_CLOEXEC));
-    real::close(pipefds[1]);
-    return pipefds[0];
-  }
 }; // namespace sandstormPreload

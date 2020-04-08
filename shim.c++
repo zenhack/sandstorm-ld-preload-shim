@@ -29,8 +29,6 @@ namespace sandstormPreload {
   // Scratch space for system/libc calls that need a buffer for a path:
   thread_local char pathBuf[PATH_MAX];
 
-  static Vfs vfs;
-
   int allocFd();
 
   namespace wrappers {

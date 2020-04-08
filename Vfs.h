@@ -20,4 +20,6 @@ namespace sandstormPreload {
     kj::MutexGuarded<std::map<int, kj::Own<PseudoFile>>> fdTable;
     kj::Lazy<EventInjector> injector;
   };
+
+  extern Vfs vfs;
 };

@@ -30,4 +30,6 @@ namespace sandstormPreload {
     }
     return real::close(fd);
   }
+
+  Vfs vfs;
 };

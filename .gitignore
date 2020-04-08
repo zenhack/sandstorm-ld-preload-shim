@@ -4,3 +4,4 @@
 *.capnp.*
 *.d
 /filesystem.capnp
+.built-capnp

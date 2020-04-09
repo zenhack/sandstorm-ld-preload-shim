@@ -12,6 +12,8 @@
 #include "EventInjector.h"
 
 namespace sandstormPreload {
+  static const char *server_addr_var = "SANDSTORM_VFS_SERVER";
+
   EventInjector::EventInjector() {
     int pipefds[2];
     KJ_SYSCALL(pipe2(pipefds, O_CLOEXEC));
@@ -20,10 +22,10 @@ namespace sandstormPreload {
 
     loopThread = std::thread([this]() {
       auto context = kj::setupAsyncIo();
-      char *vfs_addr = getenv("SANDSTORM_VFS_SERVER");
+      char *vfs_addr = getenv(server_addr_var);
       KJ_ASSERT(
           vfs_addr != nullptr,
-          "environment variable SANDSTORM_VFS_SERVER undefined."
+          kj::str("environment variable ", server_addr_var, " undefined.")
       );
       this->initData = kj::heap<EventLoopData>(context, vfs_addr);
       kj::UnixEventPort::FdObserver observer(

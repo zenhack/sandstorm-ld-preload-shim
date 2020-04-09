@@ -18,4 +18,14 @@ export SANDSTORM_PATH=/path/to/sandstorm/repo
 make
 ```
 
+This will generate `sandstorm-preload.so`
+
+# Usage
+
+```
+export LD_PRELOAD=/path/to/sandstorm-preload.so`
+export SANDSTORM_VFS_SERVER=<address of server>
+cat /sandstorm-magic/foo # or some other command
+```
+
 [1]: https://github.com/zenhack/sandstorm-filesystem

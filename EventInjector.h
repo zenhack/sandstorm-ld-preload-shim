@@ -35,14 +35,15 @@ namespace sandstormPreload {
         });
       };
 
-      auto pm = EventInjector::FnPromiseMaker<decltype(fThenUnlock)>(fThenUnlock);
+      auto pm = FnPromiseMaker<decltype(fThenUnlock)>(fThenUnlock);
+      PromiseMaker *pmAddr = &pm;
       ssize_t written;
 
       returnLock.lock();
       auto fd = injectFd.lockExclusive();
-      KJ_SYSCALL(written = real::write(fd->get(), &pm, sizeof pm));
+      KJ_SYSCALL(written = real::write(fd->get(), &pmAddr, sizeof pmAddr));
       // FIXME: handle this correctly.
-      KJ_ASSERT(written == sizeof pm, "Short write during inject");
+      KJ_ASSERT(written == sizeof pmAddr, "Short write during inject");
 
       // The event loop thread will unlock this when the promise completes:
       returnLock.lock();

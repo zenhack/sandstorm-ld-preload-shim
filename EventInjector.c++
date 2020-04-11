@@ -8,6 +8,8 @@
 #include <kj/mutex.h>
 #include <kj/async-unix.h>
 
+#include <capnp/rpc-twoparty.h>
+
 #include "EventLoopData.h"
 #include "EventInjector.h"
 
@@ -27,32 +29,45 @@ namespace sandstormPreload {
           vfs_addr != nullptr,
           kj::str("environment variable ", server_addr_var, " undefined.")
       );
-      this->initData = kj::heap<EventLoopData>(context, vfs_addr);
       kj::UnixEventPort::FdObserver observer(
           context.unixEventPort,
           handleFd.get(),
           kj::UnixEventPort::FdObserver::Flags::OBSERVE_READ
       );
-      this->acceptJobs(context, observer).wait(context.waitScope);
+      auto addr = context.provider->getNetwork().parseAddress(vfs_addr).wait(context.waitScope);
+      auto stream = addr->connect().wait(context.waitScope);
+
+      capnp::TwoPartyVatNetwork network(
+          *stream,
+          capnp::rpc::twoparty::Side::CLIENT
+      );
+      auto rpcSystem = capnp::makeRpcClient(network);
+      capnp::MallocMessageBuilder message;
+      auto vatId = message.initRoot<capnp::rpc::twoparty::VatId>();
+      vatId.setSide(capnp::rpc::twoparty::Side::SERVER);
+      auto rootDir = rpcSystem.bootstrap(vatId).castAs<RwDirectory>();
+      auto data = EventLoopData(rootDir);
+
+      acceptJobs(data, observer).wait(context.waitScope);
     });
   }
 
   kj::Promise<void> EventInjector::acceptJobs(
-      kj::AsyncIoContext& context,
+      EventLoopData& data,
       kj::UnixEventPort::FdObserver& observer) {
-    return observer.whenBecomesReadable().then([this, &context, &observer]() {
+    return observer.whenBecomesReadable().then([&]() {
       ssize_t countRead;
       PromiseMaker *pm;
       KJ_SYSCALL(countRead = real::read(handleFd.get(), &pm, sizeof pm));
       // FIXME: handle this correctly:
       KJ_ASSERT(countRead == sizeof pm, "Short read on handleFd");
-      pm->makePromise(*this->initData).detach([](kj::Exception&& e) {
+      pm->makePromise(data).detach([](kj::Exception&& e) {
           KJ_LOG(ERROR, kj::str(
                 "Exception thrown from EventInjector::runInLoop(): ",
                 e));
           std::terminate();
       });
-      return acceptJobs(context, observer);
+      return acceptJobs(data, observer);
     });
   }
 };

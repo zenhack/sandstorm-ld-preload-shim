@@ -93,68 +93,61 @@ namespace sandstormPreload {
       // unimplemented means a permission error or trying to walk() on a non-directory
       // or something.
 
-      return data.getRootDir()
-        .then([&](auto dir) -> kj::Promise<void> {
-            // Walk down the directory tree from the root until we hit our target.
-            // We start at index 1 to drop the /sandstorm-magic prefix.
-            Node::Client node = dir;
-            kj::Maybe<const kj::String&> basename;
-            for(size_t i = 1; i < path.size(); i++) {
-              dir = node.castAs<RwDirectory>();
-              auto req = dir.walkRequest();
-              req.setName(path[i]);
-              basename = path[i];
-              node = req.send().getNode();
-            }
+      // Walk down the directory tree from the root until we hit our target.
+      // We start at index 1 to drop the /sandstorm-magic prefix.
+      auto dir = data.getRootDir();
+      Node::Client node = dir;
+      kj::Maybe<const kj::String&> basename;
+      for(size_t i = 1; i < path.size(); i++) {
+        dir = node.castAs<RwDirectory>();
+        auto req = dir.walkRequest();
+        req.setName(path[i]);
+        basename = path[i];
+        node = req.send().getNode();
+      }
 
-            // Check if the node is there:
-            return node.statRequest().send().then([&](auto res) -> kj::Promise<void> {
-              // It is! check the permissions, returning an error if needbe,
-              // otherwise just return the file.
-              auto info = res.getInfo();
-              if(!(flags & O_RDONLY) && !info.getWritable()) {
-                err = EPERM;
-                return kj::READY_NOW;
-              }
-              result = kj::heap<CapnpFile>(node);
-              return kj::READY_NOW;
-
-            }, [&](kj::Exception&&) -> kj::Promise<void> {
-              // Couldn't stat the file. If we weren't asked to create it,
-              // then this is fatal; return an error:
-              if(!(flags & O_CREAT)) {
-                err = ENOENT;
-                return kj::READY_NOW;
-              }
-
-              // Maybe the file doesn't exist; try creating it:
-              KJ_IF_MAYBE(name, basename) {
-                auto req = dir.createRequest();
-                req.setName(*name);
-                req.setExecutable(mode & 0100);
-                return req.send().then([&result](auto res) -> kj::Promise<void> {
-                  Node::Client node = res.getFile();
-                  result = kj::heap<CapnpFile>(node);
-                  return kj::READY_NOW;
-                },[&err](kj::Exception&&) -> kj::Promise<void> {
-                  // Creating failed. We assume a permission error for now. TODO:
-                  // look at the exception and be a little smarter if we can.
-                  err = EPERM;
-                  return kj::READY_NOW;
-                });
-              } else {
-                // If basename is null, then was an attempt to open() the root.
-                // Odd that it failed.
-                err = EPERM;
-                return kj::READY_NOW;
-              }
-            });
-
-        }, [&](kj::Exception&&) -> auto {
-          // Getting the root itself failed. Treat it as an IO error.
-          err = EIO;
+      // Check if the node is there:
+      return node.statRequest().send().then([&](auto res) -> kj::Promise<void> {
+        // It is! check the permissions, returning an error if needbe,
+        // otherwise just return the file.
+        auto info = res.getInfo();
+        if(!(flags & O_RDONLY) && !info.getWritable()) {
+          err = EPERM;
           return kj::READY_NOW;
-        });
+        }
+        result = kj::heap<CapnpFile>(node);
+        return kj::READY_NOW;
+
+      }, [&](kj::Exception&&) -> kj::Promise<void> {
+        // Couldn't stat the file. If we weren't asked to create it,
+        // then this is fatal; return an error:
+        if(!(flags & O_CREAT)) {
+          err = ENOENT;
+          return kj::READY_NOW;
+        }
+
+        // Maybe the file doesn't exist; try creating it:
+        KJ_IF_MAYBE(name, basename) {
+          auto req = dir.createRequest();
+          req.setName(*name);
+          req.setExecutable(mode & 0100);
+          return req.send().then([&result](auto res) -> kj::Promise<void> {
+            Node::Client node = res.getFile();
+            result = kj::heap<CapnpFile>(node);
+            return kj::READY_NOW;
+          },[&err](kj::Exception&&) -> kj::Promise<void> {
+            // Creating failed. We assume a permission error for now. TODO:
+            // look at the exception and be a little smarter if we can.
+            err = EPERM;
+            return kj::READY_NOW;
+          });
+        } else {
+          // If basename is null, then was an attempt to open() the root.
+          // Odd that it failed.
+          err = EPERM;
+          return kj::READY_NOW;
+        }
+      });
     };
     vfs.getInjector().runInLoop(inLoop);
 

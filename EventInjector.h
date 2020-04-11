@@ -66,8 +66,7 @@ namespace sandstormPreload {
         Func& fn;
     };
 
-    kj::Own<EventLoopData> initData;
-
+    // Handle for the thread actually running the event loop:
     kj::Maybe<std::thread> loopThread;
 
     // To be used only outside the event loop thread:
@@ -77,7 +76,7 @@ namespace sandstormPreload {
     kj::AutoCloseFd handleFd;
 
     kj::Promise<void> acceptJobs(
-        kj::AsyncIoContext& context,
+        EventLoopData& data,
         kj::UnixEventPort::FdObserver& observer);
 
   };

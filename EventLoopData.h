@@ -9,10 +9,9 @@
 namespace sandstormPreload {
   class EventLoopData {
     public:
-      EventLoopData(kj::AsyncIoContext& context, kj::StringPtr serverAddr);
-      kj::Promise<RwDirectory::Client> getRootDir();
-
+      EventLoopData(RwDirectory::Client rootDir);
+      RwDirectory::Client getRootDir();
     private:
-      kj::Maybe<kj::ForkedPromise<RwDirectory::Client>> rootDir;
+      RwDirectory::Client rootDir;
   };
 };

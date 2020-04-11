@@ -48,12 +48,13 @@ namespace sandstormPreload {
       // The event loop thread will unlock this when the promise completes:
       returnLock.lock();
     }
-  private:
 
     class PromiseMaker {
       public:
         virtual kj::Promise<void> makePromise(EventLoopData&) = 0;
     };
+
+  private:
     template<class Func>
     class FnPromiseMaker : public PromiseMaker {
       public:
@@ -66,18 +67,6 @@ namespace sandstormPreload {
         Func& fn;
     };
 
-    // Handle for the thread actually running the event loop:
-    kj::Maybe<std::thread> loopThread;
-
-    // To be used only outside the event loop thread:
     kj::MutexGuarded<kj::AutoCloseFd> injectFd;
-
-    // To be used only inside the event loop thread:
-    kj::AutoCloseFd handleFd;
-
-    kj::Promise<void> acceptJobs(
-        EventLoopData& data,
-        kj::UnixEventPort::FdObserver& observer);
-
   };
 };

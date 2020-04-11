@@ -16,13 +16,34 @@
 namespace sandstormPreload {
   static const char *server_addr_var = "SANDSTORM_VFS_SERVER";
 
+  static kj::Promise<void> acceptJobs(
+      EventLoopData& data,
+      kj::AutoCloseFd& handleFd,
+      kj::UnixEventPort::FdObserver& observer) {
+    return observer.whenBecomesReadable().then([&]() {
+      ssize_t countRead;
+      EventInjector::PromiseMaker *pm;
+      KJ_SYSCALL(countRead = real::read(handleFd.get(), &pm, sizeof pm));
+      // FIXME: handle this correctly:
+      KJ_ASSERT(countRead == sizeof pm, "Short read on handleFd");
+      pm->makePromise(data).detach([](kj::Exception&& e) {
+          KJ_LOG(ERROR, kj::str(
+                "Exception thrown from EventInjector::runInLoop(): ",
+                e));
+          std::terminate();
+      });
+      return acceptJobs(data, handleFd, observer);
+    });
+  }
+
   EventInjector::EventInjector() {
     int pipefds[2];
     KJ_SYSCALL(pipe2(pipefds, O_CLOEXEC));
     *injectFd.lockExclusive() = kj::AutoCloseFd(pipefds[1]);
-    handleFd = kj::AutoCloseFd(pipefds[0]);
 
-    loopThread = std::thread([this]() {
+    std::thread([pipefds]() {
+      auto handleFd = kj::AutoCloseFd(pipefds[0]);
+
       auto context = kj::setupAsyncIo();
       char *vfs_addr = getenv(server_addr_var);
       KJ_ASSERT(
@@ -48,26 +69,7 @@ namespace sandstormPreload {
       auto rootDir = rpcSystem.bootstrap(vatId).castAs<RwDirectory>();
       auto data = EventLoopData(rootDir);
 
-      acceptJobs(data, observer).wait(context.waitScope);
-    });
-  }
-
-  kj::Promise<void> EventInjector::acceptJobs(
-      EventLoopData& data,
-      kj::UnixEventPort::FdObserver& observer) {
-    return observer.whenBecomesReadable().then([&]() {
-      ssize_t countRead;
-      PromiseMaker *pm;
-      KJ_SYSCALL(countRead = real::read(handleFd.get(), &pm, sizeof pm));
-      // FIXME: handle this correctly:
-      KJ_ASSERT(countRead == sizeof pm, "Short read on handleFd");
-      pm->makePromise(data).detach([](kj::Exception&& e) {
-          KJ_LOG(ERROR, kj::str(
-                "Exception thrown from EventInjector::runInLoop(): ",
-                e));
-          std::terminate();
-      });
-      return acceptJobs(data, observer);
-    });
+      acceptJobs(data, handleFd, observer).wait(context.waitScope);
+    }).detach();
   }
 };

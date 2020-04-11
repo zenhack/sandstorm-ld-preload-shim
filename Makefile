@@ -34,7 +34,6 @@ objects := \
 all: $(SONAME).so
 clean:
 	git clean -X -f
-	rm -rf sandstorm/
 
 $(SONAME).so: $(objects)
 	$(CXX) $(LDFLAGS2) $(LIBS) -o $@ $(objects)

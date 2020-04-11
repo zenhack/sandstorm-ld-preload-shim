@@ -56,3 +56,5 @@ filesystem.capnp: sandstorm-filesystem/filesystem/filesystem.capnp
 
 .PHONY: all clean
 .SUFFIXES:
+
+-include $(wildcard *.d)

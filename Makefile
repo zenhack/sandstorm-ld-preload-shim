@@ -1,7 +1,10 @@
 
 
+OPT ?= -O2
+
 CXXFLAGS = \
 	   -g \
+	   $(OPT) \
 	   -Wall -Werror -Wextra \
 	   -fpermissive
 CXXFLAGS2 := \

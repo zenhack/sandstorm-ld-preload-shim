@@ -12,7 +12,7 @@ CXXFLAGS2 := \
 	-std=c++14 \
 	-fPIC -MMD -I .
 LDFLAGS2 :=
-LIBS := -ldl -lkj -lcapnp -lcapnp-rpc -pthread
+LIBS := -ldl -lkj -lkj-async -lcapnp -lcapnp-rpc -pthread
 SONAME := sandstorm-preload
 
 capnp_objects := \

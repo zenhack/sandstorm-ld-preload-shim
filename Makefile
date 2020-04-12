@@ -11,8 +11,8 @@ CXXFLAGS2 := \
 	$(CXXFLAGS) \
 	-std=c++14 \
 	-fPIC -MMD -I .
-LDFLAGS2 := -shared
-LIBS := -ldl -lkj -lcapnp -lcapnp-rpc
+LDFLAGS2 :=
+LIBS := -ldl -lkj -lcapnp -lcapnp-rpc -pthread
 SONAME := sandstorm-preload
 
 capnp_objects := \
@@ -39,7 +39,10 @@ clean:
 	git clean -X -f
 
 $(SONAME).so: $(objects)
-	$(CXX) $(LDFLAGS2) $(LIBS) -o $@ $(objects)
+	$(CXX) -shared $(LDFLAGS2) $(LIBS) -o $@ $(objects)
+
+linkcanary: $(objects) linkcanary.o
+	$(CXX) $(LDFLAGS2) $(LIBS) -o $@ $(objects) linkcanary.o
 
 %.o: %.c++ $(capnp_headers)
 	$(CXX) $(CXXFLAGS2) -c -o $@ $<

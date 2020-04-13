@@ -7,10 +7,12 @@
 namespace sandstormPreload {
   class CapnpFile : public PseudoFile {
   public:
-    CapnpFile(Node::Client& node);
+    CapnpFile(Node::Client& node, int oflags);
     virtual ssize_t read(void *buf, size_t count);
     virtual ssize_t write(const void *buf, size_t count);
   private:
     Node::Client node;
+    int oflags;
+    uint64_t offset;
   };
 };

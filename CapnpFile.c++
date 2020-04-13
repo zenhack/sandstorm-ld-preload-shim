@@ -10,10 +10,13 @@
 
 
 namespace sandstormPreload {
-  CapnpFile::CapnpFile(Node::Client& node, int oflags)
+  CapnpFile::CapnpFile(Node::Client& node, int oflags, StatInfo::Reader statInfo)
     : node(node),
     oflags(oflags),
-    offset(0) {}
+    offset(0),
+    executable(statInfo.getExecutable()),
+    writable(statInfo.getWritable()),
+    isDir(statInfo.which() == StatInfo::DIR) {}
 
   ssize_t CapnpFile::read(void *, size_t) {
     errno = ENOSYS;
@@ -21,8 +24,15 @@ namespace sandstormPreload {
   }
 
   ssize_t CapnpFile::write(const void *buf, size_t size) {
-    if(OFLAG_ACCESS(oflags) == O_RDONLY) {
+    if(OFLAG_ACCESS(oflags) == O_RDONLY || !writable) {
       errno = EPERM;
+      return -1;
+    }
+
+    if(isDir) {
+      // Emperically, this is what happens when you
+      // open a directory and then try to write().
+      errno = EBADF;
       return -1;
     }
 

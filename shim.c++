@@ -118,7 +118,7 @@ namespace sandstormPreload {
           err = EPERM;
           return kj::READY_NOW;
         }
-        result = kj::heap<CapnpFile>(node, flags);
+        result = kj::heap<CapnpFile>(node, flags, info);
         return kj::READY_NOW;
 
       }, [&](kj::Exception&&) -> kj::Promise<void> {
@@ -131,12 +131,21 @@ namespace sandstormPreload {
 
         // Maybe the file doesn't exist; try creating it:
         KJ_IF_MAYBE(name, basename) {
+          // TODO: check if we should be making a directory instead.
           auto req = dir.createRequest();
           req.setName(*name);
-          req.setExecutable(mode & 0100);
-          return req.send().then([&result, flags](auto res) -> kj::Promise<void> {
+          bool writable = mode & 0200;
+          bool executable = mode & 0100;
+          req.setExecutable(executable);
+          return req.send().then([&result, writable, executable, flags](auto res) -> kj::Promise<void> {
+            capnp::MallocMessageBuilder msg;
+            auto info = msg.initRoot<StatInfo>();
+            info.setExecutable(executable);
+            info.setWritable(writable);
+            info.initFile();
+
             Node::Client node = res.getFile();
-            result = kj::heap<CapnpFile>(node, flags);
+            result = kj::heap<CapnpFile>(node, flags, info);
             return kj::READY_NOW;
           },[&err](kj::Exception&&) -> kj::Promise<void> {
             // Creating failed. We assume a permission error for now. TODO:

@@ -25,6 +25,8 @@
 #include "CapnpFile.h"
 #include "Vfs.h"
 
+#include "oflags.h"
+
 namespace sandstormPreload {
   // Scratch space for system/libc calls that need a buffer for a path:
   thread_local char pathBuf[PATH_MAX];
@@ -112,7 +114,7 @@ namespace sandstormPreload {
         // It is! check the permissions, returning an error if needbe,
         // otherwise just return the file.
         auto info = res.getInfo();
-        if(!(flags & O_RDONLY) && !info.getWritable()) {
+        if(OFLAG_ACCESS(flags) != O_RDONLY && !info.getWritable()) {
           err = EPERM;
           return kj::READY_NOW;
         }

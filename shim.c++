@@ -54,12 +54,24 @@ namespace sandstormPreload {
           mode = va_arg(args, mode_t);
           va_end(args);
         }
-        realpath(pathstr, pathBuf);
-        auto path = kj::Path(nullptr).eval(pathBuf);
-        if(path[0] != "sandstorm-magic") {
-          return real::open(pathstr, flags, mode);
+
+        // If the path is under /sandstorm-magic, handle it ourselves:
+        auto path = kj::Path(nullptr).eval(pathstr);
+        if(path[0] == "sandstorm-magic") {
+          return openPseudo(path, flags, mode);
         }
-        return openPseudo(path, flags, mode);
+
+        // ...or if it's a symlink to something under /sandstorm-magic:
+        memset(pathBuf, 0, PATH_MAX);
+        if(readlink(pathstr, pathBuf, PATH_MAX) >= 0) {
+          path = kj::Path(kj::mv(path)).eval(pathBuf);
+          if(path[0] == "sandstorm-magic") {
+            return openPseudo(path, flags, mode);
+          }
+        }
+
+        // Otherwise, pass it through to the syscall:
+        return real::open(pathstr, flags, mode);
       }
 
       int close(int fd) noexcept {

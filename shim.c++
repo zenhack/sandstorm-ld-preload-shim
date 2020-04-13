@@ -85,6 +85,7 @@ namespace sandstormPreload {
   int openPseudo(kj::PathPtr path, int flags, mode_t mode) {
     int err = 0;
     kj::Maybe<kj::Own<PseudoFile>> result;
+    Node::Client node(nullptr);
 
     auto inLoop = [&](EventLoopData& data) -> kj::Promise<void> {
       // TODO: we should be more thoughtful about what errno values we return
@@ -96,7 +97,7 @@ namespace sandstormPreload {
       // Walk down the directory tree from the root until we hit our target.
       // We start at index 1 to drop the /sandstorm-magic prefix.
       auto dir = data.getRootDir();
-      Node::Client node = dir;
+      node = dir;
       kj::Maybe<const kj::String&> basename;
       for(size_t i = 1; i < path.size(); i++) {
         dir = node.castAs<RwDirectory>();

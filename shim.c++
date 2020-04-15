@@ -101,7 +101,7 @@ namespace sandstormPreload {
     kj::Maybe<kj::Own<PseudoFile>> result;
     Node::Client node(nullptr);
 
-    auto inLoop = [&](EventLoopData& data) -> kj::Promise<void> {
+    vfs.getInjector().runInLoop([&](EventLoopData& data) -> kj::Promise<void> {
       // TODO: we should be more thoughtful about what errno values we return
       // when things fail. For example, we should always look at the exception type
       // to inform the decision: disconnected errors should retrun EIO, while
@@ -172,8 +172,7 @@ namespace sandstormPreload {
           return kj::READY_NOW;
         }
       });
-    };
-    vfs.getInjector().runInLoop(inLoop);
+    });
 
     errno = err;
     KJ_IF_MAYBE(file, result) {

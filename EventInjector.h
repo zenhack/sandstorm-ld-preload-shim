@@ -22,7 +22,7 @@ namespace sandstormPreload {
     // Spawn an event loop and run `f` in the event loop's thread.
 
     template<class Func>
-    void runInLoop(Func& f) {
+    void runInLoop(Func f) {
       // Run `f` in a separate thread, and wait for the promise it retuurns.
       // `f` should be a functor (typically a lambda) which takes an argument
       // of type `EventLoopData&` and returns a `kj::Promise<void>`

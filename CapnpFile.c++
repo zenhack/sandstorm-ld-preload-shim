@@ -39,7 +39,7 @@ namespace sandstormPreload {
     int err = 0;
     ssize_t result = (ssize_t)size;
 
-    auto inLoop = [&](auto) -> kj::Promise<void> {
+    vfs.getInjector().runInLoop([&](auto) -> kj::Promise<void> {
       RwFile::Client file(node.castAs<RwFile>());
 
       auto fileWriteReq = file.writeRequest();
@@ -65,8 +65,7 @@ namespace sandstormPreload {
           result = -1;
           return kj::READY_NOW;
         });
-    };
-    vfs.getInjector().runInLoop(inLoop);
+    });
     errno = err;
     return result;
   }

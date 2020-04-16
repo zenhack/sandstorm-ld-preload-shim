@@ -55,7 +55,9 @@ namespace sandstormPreload {
           handleFd.get(),
           kj::UnixEventPort::FdObserver::Flags::OBSERVE_READ
       );
-      auto addr = context.provider->getNetwork().parseAddress(vfs_addr).wait(context.waitScope);
+      auto addr = context.provider->getNetwork()
+        .parseAddress(vfs_addr)
+        .wait(context.waitScope);
       auto stream = addr->connect().wait(context.waitScope);
 
       capnp::TwoPartyVatNetwork network(

@@ -133,10 +133,47 @@ namespace sandstormPreload {
     };
   }; // namespace wrappers
 
+  struct WalkPathResults {
+    public:
+      WalkPathResults()
+        : basename(nullptr)
+        , node(nullptr)
+        , dir(nullptr)
+      {}
+
+      kj::Maybe<const kj::String&> basename;
+      // Lifetime of the reference equals that of the PathPtr that was
+      // passed to walkPath.
+
+      Node::Client node;
+      RwDirectory::Client dir;
+  };
+
+  WalkPathResults walkPath(kj::PathPtr path, EventLoopData& data) {
+    // Walk down the directory tree from the root until we hit our target.
+    // We start at index 1 to drop the /sandstorm-magic prefix.
+    auto dir = data.getRootDir();
+    Node::Client node(dir);
+    kj::Maybe<const kj::String&> basename;
+    for(size_t i = 1; i < path.size(); i++) {
+      dir = node.castAs<RwDirectory>();
+      auto req = dir.walkRequest();
+      req.setName(path[i]);
+      basename = path[i];
+      node = req.send().getNode();
+    }
+    WalkPathResults res;
+    res.basename = kj::mv(basename);
+    res.node = kj::mv(node);
+    res.dir = kj::mv(dir);
+    return res;
+  }
+
   int openPseudo(kj::PathPtr path, int flags, mode_t mode) {
     int err = 0;
     kj::Maybe<kj::Own<PseudoFile>> result;
     Node::Client node(nullptr);
+    WalkPathResults walkRes;
 
     vfs.getInjector().runInLoop([&](EventLoopData& data) -> kj::Promise<void> {
       // TODO: we should be more thoughtful about what errno values we return
@@ -144,19 +181,8 @@ namespace sandstormPreload {
       // to inform the decision: disconnected errors should retrun EIO, while
       // unimplemented means a permission error or trying to walk() on a non-directory
       // or something.
-
-      // Walk down the directory tree from the root until we hit our target.
-      // We start at index 1 to drop the /sandstorm-magic prefix.
-      auto dir = data.getRootDir();
-      node = dir;
-      kj::Maybe<const kj::String&> basename;
-      for(size_t i = 1; i < path.size(); i++) {
-        dir = node.castAs<RwDirectory>();
-        auto req = dir.walkRequest();
-        req.setName(path[i]);
-        basename = path[i];
-        node = req.send().getNode();
-      }
+      walkRes = walkPath(path, data);
+      node = walkRes.node;
 
       // Check if the node is there:
       return node.statRequest().send().then([&](auto res) -> kj::Promise<void> {
@@ -179,9 +205,9 @@ namespace sandstormPreload {
         }
 
         // Maybe the file doesn't exist; try creating it:
-        KJ_IF_MAYBE(name, basename) {
+        KJ_IF_MAYBE(name, walkRes.basename) {
           // TODO: check if we should be making a directory instead.
-          auto req = dir.createRequest();
+          auto req = walkRes.dir.createRequest();
           req.setName(*name);
           bool writable = mode & 0200;
           bool executable = mode & 0100;
@@ -193,7 +219,7 @@ namespace sandstormPreload {
             info.setWritable(writable);
             info.initFile();
 
-            Node::Client node = res.getFile();
+            Node::Client node(res.getFile());
             result = kj::heap<CapnpFile>(node, flags, info);
             return kj::READY_NOW;
           },[&err](kj::Exception&&) -> kj::Promise<void> {

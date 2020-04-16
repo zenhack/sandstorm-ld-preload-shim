@@ -35,26 +35,27 @@ namespace sandstormPreload {
 
   namespace wrappers {
     // The LD_PRELOAD wrappers themselves.
+    //
+    // We split each of these into two functions:
+    //
+    // - One in namespace cxx, which is declared noexcept,
+    // - another outside the namespace, which is declared
+    //   extern "C" and just calls the cxx function.
+    //
+    // We do this because if we put noexcept on the wrapper itself,
+    // clang will give us an error because the prototype doesn't
+    // match what's declared in the C header. But we absolutely
+    // CANNOT let exceptions bubble up into C code, so the indirection
+    // allows us to mark the implementation as noexcept while keeping
+    // clang happy.
+    //
+    // Note that the direct wrapper for open() has a little bit more
+    // logic to deal with the weird varargs convention, just because
+    // it's more convienient than propagating the varargs to the
+    // cxx version.
 
-    extern "C" {
-      int open(const char *pathstr, int flags, ...) {
-        // from open(2):
-        //
-        // > The mode argument specifies the file mode bits be applied when
-        // > a new file is created. This argument must be supplied when O_CREAT
-        // > or O_TMPFILE is specified in flags; if neither O_CREAT nor O_TMPFILE
-        // > is specified, then mode is ignored.
-        //
-        // We use those flags to work out whether we were called with a third
-        // argument or not.
-        mode_t mode = 0;
-        if(flags & (O_CREAT | O_TMPFILE)) {
-          va_list args;
-          va_start(args, flags);
-          mode = va_arg(args, mode_t);
-          va_end(args);
-        }
-
+    namespace cxx {
+      int open(const char *pathstr, int flags, mode_t mode) noexcept {
         // If the path is under /sandstorm-magic, handle it ourselves:
         auto path = kj::Path(nullptr).eval(pathstr);
         if(path[0] == "sandstorm-magic") {
@@ -93,6 +94,42 @@ namespace sandstormPreload {
           return real::write(fd, buf, count);
         }
       }
+    };
+
+    extern "C" {
+      int open(const char *pathstr, int flags, ...) {
+        // from open(2):
+        //
+        // > The mode argument specifies the file mode bits be applied when
+        // > a new file is created. This argument must be supplied when O_CREAT
+        // > or O_TMPFILE is specified in flags; if neither O_CREAT nor O_TMPFILE
+        // > is specified, then mode is ignored.
+        //
+        // We use those flags to work out whether we were called with a third
+        // argument or not.
+        mode_t mode = 0;
+        if(flags & (O_CREAT | O_TMPFILE)) {
+          va_list args;
+          va_start(args, flags);
+          mode = va_arg(args, mode_t);
+          va_end(args);
+        }
+
+        return cxx::open(pathstr, flags, mode);
+      }
+
+      int close(int fd) {
+        return cxx::close(fd);
+      }
+
+      ssize_t read(int fd, void *buf, size_t count) {
+        return cxx::read(fd, buf, count);
+      }
+
+      ssize_t write(int fd, const void *buf, size_t count) {
+        return cxx::write(fd, buf, count);
+      }
+
     };
   }; // namespace wrappers
 

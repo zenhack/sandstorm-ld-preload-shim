@@ -5,7 +5,7 @@
 #include "filesystem.capnp.h"
 
 namespace sandstormPreload {
-  class CapnpFile : public PseudoFile {
+  class CapnpFile final : public PseudoFile {
   public:
     CapnpFile(Node::Client& node, int oflags, StatInfo::Reader statInfo);
     virtual ssize_t read(void *buf, size_t count);

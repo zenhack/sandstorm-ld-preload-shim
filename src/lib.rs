@@ -5,37 +5,10 @@ use std::{
     sync,
 };
 
+mod real;
+
 #[macro_use]
 extern crate lazy_static;
-
-fn cstr(buf: &[u8]) -> *const libc::c_char {
-    &buf[0] as *const u8 as *const libc::c_char
-}
-
-unsafe fn dlnext(name: &[u8]) -> *mut libc::c_void {
-    libc::dlsym(libc::RTLD_NEXT, cstr(name))
-}
-
-type CloseType = unsafe extern fn(libc::c_int) -> libc::c_int;
-
-#[derive(Copy, Clone)]
-struct RealFns {
-    real_close: CloseType,
-}
-
-impl RealFns {
-    unsafe fn get() -> Self {
-        use std::mem::transmute;
-        RealFns {
-            real_close: transmute::<_, CloseType>(dlnext(b"close\0")),
-        }
-    }
-
-    unsafe fn close(&self, fd: libc::c_int) -> libc::c_int {
-        let f = self.real_close;
-        f(fd)
-    }
-}
 
 trait Fd {
     fn close(&self) -> libc::c_int;
@@ -59,13 +32,12 @@ impl FdTable {
         mg.get(&fd).map(|v| v.clone())
     }
 
-    fn remove(&self, fd: libc::c_int) -> Option<FdPtr> {
+    pub fn remove(&self, fd: libc::c_int) -> Option<FdPtr> {
         self.fds.lock().unwrap().remove(&fd)
     }
 }
 
 lazy_static! {
-    static ref REAL: RealFns = unsafe { RealFns::get() };
     static ref FD_TABLE: sync::Mutex<FdTable> = sync::Mutex::new(FdTable::new());
 }
 
@@ -76,15 +48,16 @@ fn open3(pathname: *const libc::c_char, flags: libc::c_int, mode:  libc::mode_t)
 
 /// The LD_PRELOAD wrappers themselves:
 pub mod wrappers {
-    use super::REAL;
     use libc::*;
 
     #[no_mangle]
     pub unsafe extern "C" fn close(fd: c_int) -> c_int {
-        if let Some(p) = super::FD_TABLE.remove(fd) {
-            p.close()
+        if let Some(p) = super::FD_TABLE.lock().unwrap().remove(fd) {
+            super::real::close(fd);
+            p.lock().unwrap().close()
+        } else {
+            super::real::close(fd)
         }
-        REAL.close(fd)
     }
 
     #[no_mangle]

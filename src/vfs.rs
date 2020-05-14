@@ -8,7 +8,6 @@ use crate::result::Result;
 use lazy_static;
 
 pub trait Fd {
-    fn close(&self) -> Result<()>;
     fn read(&self, buf: &mut [u8]) -> Result<isize>;
     fn write(&self, buf: &[u8]) -> Result<isize>;
 }
@@ -18,10 +17,6 @@ pub struct FdPtr(sync::Arc<sync::Mutex<dyn Fd + Send>>);
 
 
 impl Fd for FdPtr {
-    fn close(&self) -> Result<()> {
-        self.0.lock().unwrap().close()
-    }
-
     fn read(&self, buf: &mut [u8]) -> Result<isize> {
         self.0.lock().unwrap().read(buf)
     }

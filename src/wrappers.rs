@@ -31,12 +31,8 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
 
 #[no_mangle]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
-    if let Some(p) = vfs::remove(fd) {
-        real::close(fd);
-        result::extract(p.close().map(|_| 0), -1)
-    } else {
-        real::close(fd)
-    }
+    vfs::remove(fd);
+    real::close(fd)
 }
 
 #[no_mangle]

@@ -9,6 +9,7 @@ pub mod filesystem_capnp {
   include!(concat!(env!("OUT_DIR"), "/filesystem_capnp.rs"));
 }
 
+mod inject;
 mod real;
 mod result;
 mod vfs;

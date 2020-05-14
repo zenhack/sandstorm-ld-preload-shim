@@ -42,6 +42,6 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mut args: .
     open3(pathname, flags, mode)
 }
 
-unsafe fn open3(pathname: *const c_char, flags: c_int, mode: mode_t) -> c_int {
+unsafe fn open3(_pathname: *const c_char, _flags: c_int, _mode: mode_t) -> c_int {
     -1
 }

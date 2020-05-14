@@ -20,7 +20,13 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
 
 #[no_mangle]
 pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> ssize_t {
-    real::write(fd, buf, count)
+    if let Some(p) = vfs::get(fd) {
+        let buf = buf as *const u8;
+        let slice = std::slice::from_raw_parts(buf, count);
+        result::extract(p.write(slice), -1)
+    } else {
+        real::write(fd, buf, count)
+    }
 }
 
 #[no_mangle]

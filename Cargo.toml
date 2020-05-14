@@ -10,6 +10,10 @@ edition = "2018"
 libc = "0.2.70"
 lazy_static = "1.4.0"
 errno = "0.2.5"
+capnp = "0.12"
+
+[build-dependencies]
+capnpc = "0.12"
 
 [lib]
 crate-type = ["cdylib"]

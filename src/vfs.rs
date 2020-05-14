@@ -13,7 +13,23 @@ pub trait Fd {
     fn write(&self, buf: &[u8]) -> Result<isize>;
 }
 
-pub type FdPtr = sync::Arc<sync::Mutex<dyn Fd + Send>>;
+#[derive(Clone)]
+pub struct FdPtr(sync::Arc<sync::Mutex<dyn Fd + Send>>);
+
+
+impl Fd for FdPtr {
+    fn close(&self) -> Result<()> {
+        self.0.lock().unwrap().close()
+    }
+
+    fn read(&self, buf: &mut [u8]) -> Result<isize> {
+        self.0.lock().unwrap().read(buf)
+    }
+
+    fn write(&self, buf: &[u8]) -> Result<isize> {
+        self.0.lock().unwrap().write(buf)
+    }
+}
 
 struct FdTable {
     fds: sync::Mutex<HashMap<libc::c_int, FdPtr>>,

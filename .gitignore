@@ -6,3 +6,5 @@
 /filesystem.capnp
 .built-capnp
 /linkcanary
+
+/target

@@ -1,26 +1,27 @@
+use futures::task;
+use tokio::runtime;
 use std::sync::mpsc;
 
-struct Job {
-}
+// An implementation of Future which never resolves. I(zenhack) am sure this must exist
+// in some library somewhere, but am having trouble finding it.
+struct Forever{}
+impl futures::Future for Forever {
+    type Output = ();
 
-impl Job {
-    pub fn run(self) {
+    fn poll(self: std::pin::Pin<&mut Self>, _cx: &mut task::Context) -> task::Poll<Self::Output> {
+        task::Poll::Pending
     }
 }
 
 lazy_static! {
-    static ref JOB_SENDER: mpsc::SyncSender<Job> = {
-        let (sender, receiver) = mpsc::sync_channel::<Job>(0);
+    static ref EVENT_LOOP_HANDLE: runtime::Handle = {
+        let (sender, receiver) = mpsc::sync_channel::<runtime::Handle>(0);
         std::thread::spawn(move || {
-            loop {
-                match receiver.recv() {
-                    Err(_) => return,
-                    Ok(job) => {
-                        job.run();
-                    }
-                }
-            }
+            let mut my_runtime = runtime::Runtime::new().unwrap();
+            let handle = my_runtime.handle();
+            sender.send(handle.clone()).unwrap();
+            my_runtime.block_on(Forever{});
         });
-        sender
+        receiver.recv().unwrap()
     };
 }

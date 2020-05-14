@@ -3,13 +3,30 @@ use libc::*;
 use crate::{
     real,
     vfs,
+    result,
 };
+
+#[no_mangle]
+pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssize_t {
+    if let Some(p) = vfs::get(fd) {
+        let buf = buf as *mut u8;
+        let slice = std::slice::from_raw_parts_mut(buf, count);
+        result::extract(p.lock().unwrap().read(slice), -1)
+    } else {
+        real::read(fd, buf, count)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> ssize_t {
+    real::write(fd, buf, count)
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     if let Some(p) = vfs::remove(fd) {
         real::close(fd);
-        p.lock().unwrap().close()
+        result::extract(p.lock().unwrap().close().map(|_| 0), -1)
     } else {
         real::close(fd)
     }

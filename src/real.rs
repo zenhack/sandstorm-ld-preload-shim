@@ -1,18 +1,23 @@
 use lazy_static;
+use libc::{c_int, c_void, size_t, ssize_t, c_char};
 
-fn cstr(buf: &[u8]) -> *const libc::c_char {
-    &buf[0] as *const u8 as *const libc::c_char
+fn cstr(buf: &[u8]) -> *const c_char {
+    &buf[0] as *const u8 as *const c_char
 }
 
-unsafe fn dlnext(name: &[u8]) -> *mut libc::c_void {
+unsafe fn dlnext(name: &[u8]) -> *mut c_void {
     libc::dlsym(libc::RTLD_NEXT, cstr(name))
 }
 
-type CloseType = unsafe extern fn(libc::c_int) -> libc::c_int;
+type CloseType = unsafe extern fn(c_int) -> c_int;
+type ReadType = unsafe extern fn(c_int, *mut c_void, size_t) -> ssize_t;
+type WriteType = unsafe extern fn(c_int, *const c_void, size_t) -> ssize_t;
 
 #[derive(Copy, Clone)]
 struct RealFns {
     real_close: CloseType,
+    real_read: ReadType,
+    real_write: WriteType,
 }
 
 impl RealFns {
@@ -20,12 +25,24 @@ impl RealFns {
         use std::mem::transmute;
         RealFns {
             real_close: transmute::<_, CloseType>(dlnext(b"close\0")),
+            real_read: transmute::<_, ReadType>(dlnext(b"read\0")),
+            real_write: transmute::<_, WriteType>(dlnext(b"write\0")),
         }
     }
 
-    unsafe fn close(&self, fd: libc::c_int) -> libc::c_int {
+    unsafe fn close(&self, fd: c_int) -> c_int {
         let f = self.real_close;
         f(fd)
+    }
+
+    unsafe fn read(&self, fd: c_int, buf: *mut c_void, count: size_t) -> ssize_t {
+        let f = self.real_read;
+        f(fd, buf, count)
+    }
+
+    unsafe fn write(&self, fd: c_int, buf: *const c_void, count: size_t) -> ssize_t {
+        let f = self.real_write;
+        f(fd, buf, count)
     }
 }
 
@@ -33,6 +50,14 @@ lazy_static! {
     static ref REAL: RealFns = unsafe { RealFns::get() };
 }
 
-pub unsafe fn close(fd: libc::c_int) -> libc::c_int {
+pub unsafe fn close(fd: c_int) -> c_int {
     REAL.close(fd)
+}
+
+pub unsafe fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssize_t {
+    REAL.read(fd, buf, count)
+}
+
+pub unsafe fn write(fd: c_int, buf: *const c_void, count: size_t) -> ssize_t {
+    REAL.write(fd, buf, count)
 }

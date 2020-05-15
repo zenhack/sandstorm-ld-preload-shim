@@ -8,6 +8,9 @@ pub mod util_capnp {
 pub mod filesystem_capnp {
   include!(concat!(env!("OUT_DIR"), "/filesystem_capnp.rs"));
 }
+pub mod preload_server_capnp {
+  include!(concat!(env!("OUT_DIR"), "/preload_server_capnp.rs"));
+}
 
 mod inject;
 mod real;

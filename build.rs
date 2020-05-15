@@ -9,6 +9,7 @@ fn main() {
         .src_prefix(&sandstorm_schema_path)
         .import_path(&sandstorm_schema_path)
         .file("filesystem.capnp")
+        .file("preload_server.capnp")
         .file(sandstorm_schema_path + "/util.capnp")
         .run()
         .expect("schema compiler command")

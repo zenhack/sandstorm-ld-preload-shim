@@ -11,8 +11,11 @@ libc = "0.2.70"
 lazy_static = "1.4.0"
 errno = "0.2.5"
 capnp = "0.12"
-tokio = "0.2.21"
 futures = "0.3.5"
+
+# TODO: we can probably get away with less than `full`; work out which feature set
+# we actually need.
+tokio = { version = "0.2.21", features = ["full"] }
 
 [build-dependencies]
 capnpc = "0.12"

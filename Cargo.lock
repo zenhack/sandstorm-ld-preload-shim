@@ -20,9 +20,30 @@ checksum = "130aac562c0dd69c56b3b1cc8ffd2e17be31d0b6c25b61c96b76231aa23e39e1"
 
 [[package]]
 name = "capnp"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f521f27b9a0f75e8c733430e89cd30151795d708728a4060bb52ac8bc7c9bec9"
+checksum = "b9fc62803d62905cdc62628699ef104177bab00250e24e37f70051b440f1d46e"
+
+[[package]]
+name = "capnp-futures"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8db791f6877886cbc488019fc9fc7380d101b5bf14784dc4b109ac91238ed35"
+dependencies = [
+ "capnp",
+ "futures",
+]
+
+[[package]]
+name = "capnp-rpc"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1bdbbe88ffbc7bca55e5357d117e1349ba2daa31d00abefed253063d1f14e1b"
+dependencies = [
+ "capnp",
+ "capnp-futures",
+ "futures",
+]
 
 [[package]]
 name = "capnpc"
@@ -158,6 +179,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures-tokio-compat"
+version = "0.1.0"
+source = "git+https://github.com/dwrensha/futures-tokio-compat?branch=tokio-0.2#8007dfe275058242ea37f061dd591cb10ef517f9"
+dependencies = [
+ "futures-core",
+ "futures-io",
+ "log",
+ "pin-project",
+ "tokio",
+]
+
+[[package]]
 name = "futures-util"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -185,9 +218,9 @@ checksum = "8f5f3913fa0bfe7ee1fd8248b6b9f42a5af4b9d65ec2dd2c3c26132b950ecfc2"
 
 [[package]]
 name = "hermit-abi"
-version = "0.1.12"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61565ff7aaace3525556587bd2dc31d4a07071957be715e63ce7b1eccf51a8f4"
+checksum = "91780f809e750b0a89f5544be56617ff6b1227ee485bcb06ebe10cdf89bd3b71"
 dependencies = [
  "libc",
 ]
@@ -375,9 +408,9 @@ checksum = "8e946095f9d3ed29ec38de908c22f95d9ac008e424c7bcae54c75a79c527c694"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.12"
+version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8872cf6f48eee44265156c111456a700ab3483686b3f96df4cf5481c89157319"
+checksum = "53f5ffe53a6b28e37c9c1ce74893477864d64f74778a93a4beb43c8fa167f639"
 dependencies = [
  "unicode-xid",
 ]
@@ -402,12 +435,15 @@ name = "sandstorm-preload"
 version = "0.1.0"
 dependencies = [
  "capnp",
+ "capnp-rpc",
  "capnpc",
  "errno",
  "futures",
+ "futures-tokio-compat",
  "lazy_static",
  "libc",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -440,9 +476,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.21"
+version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4696caa4048ac7ce2bcd2e484b3cef88c1004e41b8e945a277e2c25dc0b72060"
+checksum = "1425de3c33b0941002740a420b1a906a350b88d08b82b2c8a01035a3f9447bac"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -482,6 +518,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tokio-util"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be8242891f2b6cbef26a2d7e8605133c2c554cd35b3e4948ea892d6d68436499"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
+ "log",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]

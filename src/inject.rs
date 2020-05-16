@@ -1,6 +1,18 @@
-use futures::task;
-use tokio::runtime;
 use std::sync::mpsc;
+use capnp_rpc::{
+    twoparty,
+    rpc_twoparty_capnp::Side,
+    RpcSystem,
+};
+use futures::task;
+use tokio::{
+    runtime,
+    net::UnixStream,
+};
+use tokio_util::compat::{
+    Tokio02AsyncReadCompatExt,
+    Tokio02AsyncWriteCompatExt,
+};
 use crate::preload_server_capnp::bootstrap;
 
 // An implementation of Future which never resolves. I(zenhack) am sure this must exist
@@ -27,14 +39,32 @@ lazy_static! {
 }
 
 thread_local! {
-    static BOOTSTRAP: bootstrap::Client = {
-        let _path = std::env::var("SANDSTORM_VFS_SERVER")
-            .expect(
-                "Environment variable SANDSTORM_PRELOAD_SERVER \
-                not defined; can't use sandstorm LD_PRELOAD shim."
-            );
-        panic!("TODO: connect to server and get bootstrap interface.");
-    }
+   static  BOOTSTRAP: bootstrap::Client =
+        capnp_rpc::new_promise_client(Box::pin(get_bootstrap()));
+}
+
+/// Connect to the preload server and return its bootstrap interface.
+///
+/// Note that this is meant to be called once per process. It (intentionally)
+/// leaks the connection, so DO NOT use this elsewhere.
+async fn get_bootstrap() -> Result<capnp::capability::Client, capnp::Error> {
+    let path = std::env::var("SANDSTORM_VFS_SERVER").expect(
+        "Environment variable SANDSTORM_PRELOAD_SERVER \
+        not defined; can't use sandstorm LD_PRELOAD shim."
+    );
+    let stream = Box::leak(Box::new(UnixStream::connect(path).await?));
+    // TODO: make sure socket is close-on-exec.
+    let (rx, tx) = stream.split();
+    let vat_net = Box::new(twoparty::VatNetwork::new(
+        rx.compat(),
+        tx.compat_write(),
+        Side::Client,
+        Default::default(),
+    ));
+    let mut rpc_system = RpcSystem::new(vat_net, None);
+    let client: bootstrap::Client = rpc_system.bootstrap(Side::Server);
+    tokio::task::spawn_local(Box::pin(async { rpc_system.await }));
+    Ok(client.client)
 }
 
 pub fn inject<F>(func: impl FnOnce(bootstrap::Client) -> F) -> F::Output where

@@ -5,8 +5,10 @@ use crate::{
     vfs,
     vfs::Fd,
     result,
+    filesystem_capnp,
 };
 use std::ffi::CStr;
+use std::path;
 use std::path::{
     Path,
     PathBuf,
@@ -19,11 +21,12 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
     let bufaddr = buf as usize;
 
     let res = vfs::with_fds(move |_bs, fds| {
-        fds.get(fd).map(|p| {
+        let r = fds.get(fd).map(|p| {
             let buf = bufaddr as *mut u8;
             let slice = std::slice::from_raw_parts_mut(buf, count);
             result::extract(p.read(slice), -1)
-        })
+        });
+        async move { r }
     });
     match res {
         Some(v) => v,
@@ -37,11 +40,12 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
     let bufaddr = buf as usize;
 
     let res = vfs::with_fds(move |_bs, fds| {
-        fds.get(fd).map(|p| {
+        let r = fds.get(fd).map(|p| {
             let buf = bufaddr as *const u8;
             let slice = std::slice::from_raw_parts(buf, count);
             result::extract(p.write(slice), -1)
-        })
+        });
+        async move { r }
     });
     match res {
         Some(v) => v,
@@ -53,6 +57,7 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     vfs::with_fds(move |_bs, fds| {
         fds.remove(fd);
+        async { () }
     });
     real::close(fd)
 }
@@ -70,15 +75,63 @@ unsafe fn open3(pathname: *const c_char, flags: c_int, mode: mode_t) -> c_int {
     if let Ok(s) = CStr::from_ptr(pathname).to_str() {
         if let Some(abs_path) = make_absolute(Path::new(s)) {
             if let Ok(virt_path) = abs_path.strip_prefix("/sandstorm-magic") {
-                return virt_open(virt_path, flags, mode);
+                return virt_open(virt_path.to_path_buf(), flags, mode);
             }
         }
     }
     real::open(pathname, flags, mode)
 }
 
-fn virt_open(_path: &Path, _flags: c_int, _mode: mode_t) -> c_int {
-    panic!("TODO");
+fn and_errno<T>((ret, err): (T, c_int)) -> T {
+    unsafe {
+        let errno_loc = libc::__errno_location();
+        *errno_loc = err;
+    }
+    ret
+}
+
+fn virt_open(path: PathBuf, _flags: c_int, _mode: mode_t) -> c_int {
+    and_errno(vfs::with_fds(move |bs, fds| {
+        let rootfs = bs.rootfs_request().send().pipeline.get_dir();
+        let mut node = filesystem_capnp::node::Client { client: rootfs.client };
+        //let mut final_reply: Option<capnp::capability::RemotePromise<_>> = None;
+        let mut final_reply = None;
+        for component in path.components() {
+
+            // TODO: maybe fail more loudly if these don't look right:
+            let os_str = match component {
+                path::Component::Normal(os_str) => os_str,
+                _ => continue,
+            };
+            let segment = match os_str.to_str() {
+                Some(s) => s,
+                None => continue,
+            };
+
+            let dir = filesystem_capnp::directory::Client { client: node.client };
+            let mut req = dir.walk_request();
+            req.get().set_name(segment);
+            let reply = req.send();
+            node = filesystem_capnp::node::Client {
+                client: reply.pipeline.get_node().client
+            };
+            final_reply = Some(reply);
+        }
+        async move {
+            match final_reply {
+                None => {
+                    (-1, libc::ENOSYS) // TODO: return the rootfs.
+                },
+                Some(reply) => {
+                    match reply.promise.await {
+                        // TODO: be smarter about what error to return.
+                        Err(_) => (-1, libc::ENOENT),
+                        Ok(_) => (-1, libc::ENOSYS) // TODO: implement.
+                    }
+                }
+            }
+        }
+    }))
 }
 
 fn make_absolute(path: &Path) -> Option<PathBuf> {

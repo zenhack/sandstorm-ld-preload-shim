@@ -1,6 +1,5 @@
 use libc;
 use std::{
-    cell::RefCell,
     collections::HashMap,
     sync,
 };
@@ -52,19 +51,22 @@ impl FdTable {
         mg.get(&fd).map(|v| v.clone())
     }
 
-    pub fn remove(&mut self, fd: libc::c_int) -> Option<FdPtr> {
+    pub fn remove(&self, fd: libc::c_int) -> Option<FdPtr> {
         self.fds.lock().unwrap().remove(&fd)
     }
 }
 
 thread_local! {
-    static FD_TABLE: RefCell<FdTable> = RefCell::new(FdTable::new());
+    static FD_TABLE: &'static FdTable = Box::leak(Box::new(FdTable::new()));
 }
 
-pub fn with_fds<T: Send + 'static>(func: impl Send + 'static + FnOnce(&bootstrap::Client, &mut FdTable) -> T) -> T {
-    inject::inject(|client| async move {
+pub fn with_fds<F>(func: impl Send + 'static + FnOnce(&bootstrap::Client, &'static FdTable) -> F) -> F::Output where
+    F: futures::Future,
+    F::Output: Send + 'static,
+{
+    inject::inject(|client| {
         FD_TABLE.with(|tbl| {
-            func(&client, &mut tbl.borrow_mut())
+            func(&client, tbl)
         })
     })
 }

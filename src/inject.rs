@@ -48,7 +48,7 @@ thread_local! {
 /// Note that this is meant to be called once per process. It (intentionally)
 /// leaks the connection, so DO NOT use this elsewhere.
 async fn get_bootstrap() -> Result<capnp::capability::Client, capnp::Error> {
-    let path = std::env::var("SANDSTORM_VFS_SERVER").expect(
+    let path = std::env::var("SANDSTORM_PRELOAD_SERVER").expect(
         "Environment variable SANDSTORM_PRELOAD_SERVER \
         not defined; can't use sandstorm LD_PRELOAD shim."
     );

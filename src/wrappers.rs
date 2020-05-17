@@ -6,6 +6,11 @@ use crate::{
     vfs::Fd,
     result,
 };
+use std::ffi::CStr;
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 #[no_mangle]
 pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssize_t {
@@ -44,6 +49,32 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mut args: .
     open3(pathname, flags, mode)
 }
 
-unsafe fn open3(_pathname: *const c_char, _flags: c_int, _mode: mode_t) -> c_int {
-    -1
+unsafe fn open3(pathname: *const c_char, flags: c_int, mode: mode_t) -> c_int {
+    if let Ok(s) = CStr::from_ptr(pathname).to_str() {
+        if let Some(abs_path) = make_absolute(Path::new(s)) {
+            if let Ok(virt_path) = abs_path.strip_prefix("/sandstorm-magic") {
+                return virt_open(virt_path, flags, mode);
+            }
+        }
+    }
+    real::open(pathname, flags, mode)
+}
+
+fn virt_open(_path: &Path, _flags: c_int, _mode: mode_t) -> c_int {
+    panic!("TODO");
+}
+
+fn make_absolute(path: &Path) -> Option<PathBuf> {
+    if path.is_absolute() {
+        return Some(path.to_path_buf())
+    };
+    match std::env::current_dir() {
+        Ok(cwd_path) => Some(cwd_path.join(path)),
+        Err(_) => {
+            // No way of working out what the absolute path
+            // we were given is; we'll treat this as not
+            // something we should handle:
+            None
+        }
+    }
 }

@@ -14,29 +14,46 @@ use std::path::{
 
 #[no_mangle]
 pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssize_t {
-    if let Some(p) = vfs::get(fd) {
-        let buf = buf as *mut u8;
-        let slice = std::slice::from_raw_parts_mut(buf, count);
-        result::extract(p.read(slice), -1)
-    } else {
-        real::read(fd, buf, count)
+    // Raw pointers are not Send, so we need to do this to outsmart the type checker
+    // and get the pointer into the event loop:
+    let bufaddr = buf as usize;
+
+    let res = vfs::with_fds(move |_bs, fds| {
+        fds.get(fd).map(|p| {
+            let buf = bufaddr as *mut u8;
+            let slice = std::slice::from_raw_parts_mut(buf, count);
+            result::extract(p.read(slice), -1)
+        })
+    });
+    match res {
+        Some(v) => v,
+        None => real::read(fd, buf, count),
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> ssize_t {
-    if let Some(p) = vfs::get(fd) {
-        let buf = buf as *const u8;
-        let slice = std::slice::from_raw_parts(buf, count);
-        result::extract(p.write(slice), -1)
-    } else {
-        real::write(fd, buf, count)
+    // See comment in `read()`.
+    let bufaddr = buf as usize;
+
+    let res = vfs::with_fds(move |_bs, fds| {
+        fds.get(fd).map(|p| {
+            let buf = bufaddr as *const u8;
+            let slice = std::slice::from_raw_parts(buf, count);
+            result::extract(p.write(slice), -1)
+        })
+    });
+    match res {
+        Some(v) => v,
+        None => real::write(fd, buf, count),
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
-    vfs::remove(fd);
+    vfs::with_fds(move |_bs, fds| {
+        fds.remove(fd);
+    });
     real::close(fd)
 }
 

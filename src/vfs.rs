@@ -1,11 +1,14 @@
 use libc;
 use std::{
+    cell::RefCell,
     collections::HashMap,
     sync,
 };
-use crate::result::Result;
-
-use lazy_static;
+use crate::{
+    result::Result,
+    inject,
+    preload_server_capnp::bootstrap,
+};
 
 pub trait Fd {
     fn read(&self, buf: &mut [u8]) -> Result<isize>;
@@ -13,7 +16,7 @@ pub trait Fd {
 }
 
 #[derive(Clone)]
-pub struct FdPtr(sync::Arc<sync::Mutex<dyn Fd + Send>>);
+pub struct FdPtr(sync::Arc<sync::Mutex<dyn Fd>>);
 
 
 impl FdPtr {
@@ -33,7 +36,7 @@ impl Fd for FdPtr {
     }
 }
 
-struct FdTable {
+pub struct FdTable {
     fds: sync::Mutex<HashMap<libc::c_int, FdPtr>>,
 }
 
@@ -49,21 +52,21 @@ impl FdTable {
         mg.get(&fd).map(|v| v.clone())
     }
 
-    pub fn remove(&self, fd: libc::c_int) -> Option<FdPtr> {
+    pub fn remove(&mut self, fd: libc::c_int) -> Option<FdPtr> {
         self.fds.lock().unwrap().remove(&fd)
     }
 }
 
-lazy_static! {
-    static ref FD_TABLE: sync::Mutex<FdTable> = sync::Mutex::new(FdTable::new());
+thread_local! {
+    static FD_TABLE: RefCell<FdTable> = RefCell::new(FdTable::new());
 }
 
-pub fn get(fd: libc::c_int) -> Option<FdPtr> {
-    FD_TABLE.lock().unwrap().get(fd)
-}
-
-pub fn remove(fd: libc::c_int) -> Option<FdPtr> {
-    FD_TABLE.lock().unwrap().remove(fd)
+pub fn with_fds<T: Send + 'static>(func: impl Send + 'static + FnOnce(&bootstrap::Client, &mut FdTable) -> T) -> T {
+    inject::inject(|client| async move {
+        FD_TABLE.with(|tbl| {
+            func(&client, &mut tbl.borrow_mut())
+        })
+    })
 }
 
 /// Allocate a fresh file descriptor.

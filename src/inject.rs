@@ -39,7 +39,7 @@ lazy_static! {
 }
 
 thread_local! {
-   static  BOOTSTRAP: bootstrap::Client =
+   static BOOTSTRAP: bootstrap::Client =
         capnp_rpc::new_promise_client(Box::pin(get_bootstrap()));
 }
 
@@ -67,10 +67,11 @@ async fn get_bootstrap() -> Result<capnp::capability::Client, capnp::Error> {
     Ok(client.client)
 }
 
-pub fn inject<F>(func: impl FnOnce(bootstrap::Client) -> F) -> F::Output where
-    F: futures::Future + Send + 'static
+pub fn inject<F>(func: impl FnOnce(bootstrap::Client) -> F + Send + 'static) -> F::Output where
+    F: futures::Future,
+    F::Output: Send + 'static,
 {
-    EVENT_LOOP_HANDLE.block_on(BOOTSTRAP.with(|c| {
+    EVENT_LOOP_HANDLE.block_on(BOOTSTRAP.with(move |c| {
         func(c.clone())
     }))
 }

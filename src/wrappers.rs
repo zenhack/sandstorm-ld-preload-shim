@@ -7,6 +7,7 @@ use crate::{
     vfs::Fd,
     result,
     filesystem_capnp,
+    capnp_file::FsNode,
 };
 use std::ffi::CStr;
 use std::path;
@@ -143,7 +144,13 @@ fn virt_open(path: PathBuf, _flags: c_int, _mode: mode_t) -> c_int {
                     match reply.promise.await {
                         // TODO: be smarter about what error to return.
                         Err(_) => (-1, libc::ENOENT),
-                        Ok(_) => (-1, libc::ENOSYS) // TODO: implement.
+                        Ok(res) => {
+                            // FIXME: handle errors from get() and get_node():
+                            let fd = vfs::FdPtr::new(FsNode::new(
+                                res.get().unwrap().get_node().unwrap()
+                            ));
+                            fds.add(fd)
+                        }
                     }
                 }
             }

@@ -12,6 +12,7 @@ pub mod preload_server_capnp {
   include!(concat!(env!("OUT_DIR"), "/preload_server_capnp.rs"));
 }
 
+mod capnp_file;
 mod inject;
 mod real;
 mod result;

@@ -21,7 +21,7 @@ pub struct FdPtr(Rc<dyn Fd>);
 
 impl FdPtr {
     // TODO: can we avoid the static lifetime? Maybe using Pin?
-    pub fn new(fd: impl Fd + Send + 'static) -> Self {
+    pub fn new(fd: impl Fd + 'static) -> Self {
         FdPtr(Rc::new(fd))
     }
 }
@@ -53,6 +53,15 @@ impl FdTable {
 
     pub fn remove(&self, fd: libc::c_int) -> Option<FdPtr> {
         self.fds.borrow_mut().remove(&fd)
+    }
+
+    pub fn add(&self, fdp: FdPtr) -> (libc::c_int, libc::c_int) {
+        let fd = new_fd();
+        if fd < 0 {
+            return (fd, unsafe { *libc::__errno_location() })
+        }
+        self.fds.borrow_mut().insert(fd, fdp);
+        (fd, 0)
     }
 }
 

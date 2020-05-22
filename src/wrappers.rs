@@ -71,7 +71,7 @@ pub unsafe extern "C" fn close(fd: c_int) -> c_int {
 
     vfs::with_fds(move |fds| {
         fds.remove(fd);
-        async { () }
+        async {}
     });
     real::close(fd)
 }

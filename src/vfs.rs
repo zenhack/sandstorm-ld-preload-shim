@@ -1,7 +1,7 @@
 use libc;
 use std::{
+    cell::RefCell,
     collections::HashMap,
-    sync,
     rc::Rc,
 };
 use crate::{
@@ -37,23 +37,22 @@ impl Fd for FdPtr {
 }
 
 pub struct FdTable {
-    fds: sync::Mutex<HashMap<libc::c_int, FdPtr>>,
+    fds: RefCell<HashMap<libc::c_int, FdPtr>>,
 }
 
 impl FdTable {
     fn new() -> Self {
         FdTable{
-            fds: sync::Mutex::new(HashMap::new()),
+            fds: RefCell::new(HashMap::new()),
         }
     }
 
     pub fn get(&self, fd: libc::c_int) -> Option<FdPtr> {
-        let mg = self.fds.lock().unwrap();
-        mg.get(&fd).map(|v| v.clone())
+        self.fds.borrow().get(&fd).map(|v| v.clone())
     }
 
     pub fn remove(&self, fd: libc::c_int) -> Option<FdPtr> {
-        self.fds.lock().unwrap().remove(&fd)
+        self.fds.borrow_mut().remove(&fd)
     }
 }
 

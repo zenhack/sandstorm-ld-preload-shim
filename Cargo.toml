@@ -24,3 +24,10 @@ capnpc = "0.12"
 
 [lib]
 crate-type = ["cdylib"]
+
+# We *cannot* allow panics to bubble up out into C functions, as that would be UB.
+# So panics must abort the process:
+[profile.dev]
+panic = "abort"
+[profile.release]
+panic = "abort"

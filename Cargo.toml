@@ -17,9 +17,7 @@ tokio-util = { version = "0.3.1", features = ["compat"] }
 
 futures-tokio-compat = { git = "https://github.com/dwrensha/futures-tokio-compat", branch = "tokio-0.2" }
 
-# TODO: we can probably get away with less than `full`; work out which feature set
-# we actually need.
-tokio = { version = "0.2.21", features = ["full"] }
+tokio = { version = "0.2.21", features = ["rt-core", "rt-util", "net"] }
 
 [build-dependencies]
 capnpc = "0.12"

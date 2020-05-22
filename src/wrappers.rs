@@ -137,7 +137,7 @@ fn virt_open(path: PathBuf, _flags: c_int, _mode: mode_t) -> c_int {
         async move {
             match final_reply {
                 None => {
-                    (-1, libc::ENOSYS) // TODO: return the rootfs.
+                    fds.add(vfs::FdPtr::new(FsNode::new(node)))
                 },
                 Some(reply) => {
                     match reply.promise.await {

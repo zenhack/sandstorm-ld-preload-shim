@@ -2,6 +2,7 @@ use libc;
 use std::{
     collections::HashMap,
     sync,
+    rc::Rc,
 };
 use crate::{
     result::Result,
@@ -15,23 +16,23 @@ pub trait Fd {
 }
 
 #[derive(Clone)]
-pub struct FdPtr(sync::Arc<sync::Mutex<dyn Fd>>);
+pub struct FdPtr(Rc<dyn Fd>);
 
 
 impl FdPtr {
     // TODO: can we avoid the static lifetime? Maybe using Pin?
     pub fn new(fd: impl Fd + Send + 'static) -> Self {
-        FdPtr(sync::Arc::new(sync::Mutex::new(fd)))
+        FdPtr(Rc::new(fd))
     }
 }
 
 impl Fd for FdPtr {
     fn read(&self, buf: &mut [u8]) -> Result<isize> {
-        self.0.lock().unwrap().read(buf)
+        self.0.read(buf)
     }
 
     fn write(&self, buf: &[u8]) -> Result<isize> {
-        self.0.lock().unwrap().write(buf)
+        self.0.write(buf)
     }
 }
 

@@ -2,6 +2,7 @@
 use libc::*;
 use crate::{
     real,
+    inject,
     vfs,
     vfs::Fd,
     result,
@@ -16,11 +17,15 @@ use std::path::{
 
 #[no_mangle]
 pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssize_t {
+    if inject::in_rpc_thread() {
+        return real::read(fd, buf, count)
+    }
+
     // Raw pointers are not Send, so we need to do this to outsmart the type checker
     // and get the pointer into the event loop:
     let bufaddr = buf as usize;
 
-    let res = vfs::with_fds(move |_bs, fds| {
+    let res = vfs::with_fds(move |fds| {
         let r = fds.get(fd).map(|p| {
             let buf = bufaddr as *mut u8;
             let slice = std::slice::from_raw_parts_mut(buf, count);
@@ -36,10 +41,14 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, count: size_t) -> ssi
 
 #[no_mangle]
 pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> ssize_t {
+    if inject::in_rpc_thread() {
+        return real::write(fd, buf, count)
+    }
+
     // See comment in `read()`.
     let bufaddr = buf as usize;
 
-    let res = vfs::with_fds(move |_bs, fds| {
+    let res = vfs::with_fds(move |fds| {
         let r = fds.get(fd).map(|p| {
             let buf = bufaddr as *const u8;
             let slice = std::slice::from_raw_parts(buf, count);
@@ -55,7 +64,11 @@ pub unsafe extern "C" fn write(fd: c_int, buf: *const c_void, count: size_t) -> 
 
 #[no_mangle]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
-    vfs::with_fds(move |_bs, fds| {
+    if inject::in_rpc_thread() {
+        return real::close(fd)
+    }
+
+    vfs::with_fds(move |fds| {
         fds.remove(fd);
         async { () }
     });
@@ -72,6 +85,10 @@ pub unsafe extern "C" fn open(pathname: *const c_char, flags: c_int, mut args: .
 }
 
 unsafe fn open3(pathname: *const c_char, flags: c_int, mode: mode_t) -> c_int {
+    if inject::in_rpc_thread() {
+        return real::open(pathname, flags, mode)
+    }
+
     if let Ok(s) = CStr::from_ptr(pathname).to_str() {
         if let Some(abs_path) = make_absolute(Path::new(s)) {
             if let Ok(virt_path) = abs_path.strip_prefix("/sandstorm-magic") {
@@ -91,7 +108,7 @@ fn and_errno<T>((ret, err): (T, c_int)) -> T {
 }
 
 fn virt_open(path: PathBuf, _flags: c_int, _mode: mode_t) -> c_int {
-    and_errno(vfs::with_fds(move |bs, fds| {
+    and_errno(vfs::with_fds_and_bootstrap(move |bs, fds| {
         let rootfs = bs.rootfs_request().send().pipeline.get_dir();
         let mut node = filesystem_capnp::node::Client { client: rootfs.client };
         //let mut final_reply: Option<capnp::capability::RemotePromise<_>> = None;

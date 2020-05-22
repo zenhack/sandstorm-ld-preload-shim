@@ -1,4 +1,7 @@
-use std::sync::mpsc;
+use std::{
+    cell::RefCell,
+    sync::mpsc,
+};
 use capnp_rpc::{
     twoparty,
     rpc_twoparty_capnp::Side,
@@ -30,6 +33,7 @@ lazy_static! {
     static ref EVENT_LOOP_HANDLE: runtime::Handle = {
         let (tx, rx) = mpsc::sync_channel::<runtime::Handle>(0);
         std::thread::spawn(move || {
+            IS_RPC_THREAD.with(|r| *r.borrow_mut() = true);
             let mut my_runtime = runtime::Runtime::new().unwrap();
             tx.send(my_runtime.handle().clone()).unwrap();
             my_runtime.block_on(Forever{});
@@ -41,6 +45,8 @@ lazy_static! {
 thread_local! {
    static BOOTSTRAP: bootstrap::Client =
         capnp_rpc::new_promise_client(Box::pin(get_bootstrap()));
+
+   static IS_RPC_THREAD: RefCell<bool> = RefCell::new(false);
 }
 
 /// Connect to the preload server and return its bootstrap interface.
@@ -67,11 +73,26 @@ async fn get_bootstrap() -> Result<capnp::capability::Client, capnp::Error> {
     Ok(client.client)
 }
 
-pub fn inject<F>(func: impl FnOnce(bootstrap::Client) -> F + Send + 'static) -> F::Output where
+pub fn in_rpc_thread() -> bool {
+    IS_RPC_THREAD.with(|r| *r.borrow())
+}
+
+pub fn inject<F>(func: impl FnOnce() -> F + Send + 'static) -> F::Output where
     F: futures::Future,
     F::Output: Send + 'static,
 {
-    EVENT_LOOP_HANDLE.block_on(BOOTSTRAP.with(move |c| {
-        func(c.clone())
-    }))
+    if in_rpc_thread() {
+        panic!("BUG: inject() is not reentrant!")
+    } else {
+        EVENT_LOOP_HANDLE.block_on(async move { func().await })
+    }
+}
+
+pub fn with_bootstrap<F>(func: impl FnOnce(bootstrap::Client) -> F + Send + 'static) -> F::Output where
+    F: futures::Future,
+    F::Output: Send + 'static,
+{
+    inject(move || {
+        BOOTSTRAP.with(move |c| func(c.clone()))
+    })
 }

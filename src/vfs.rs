@@ -60,15 +60,22 @@ thread_local! {
     static FD_TABLE: &'static FdTable = Box::leak(Box::new(FdTable::new()));
 }
 
-pub fn with_fds<F>(func: impl Send + 'static + FnOnce(&bootstrap::Client, &'static FdTable) -> F) -> F::Output where
+pub fn with_fds_and_bootstrap<F>(func: impl Send + 'static + FnOnce(&bootstrap::Client, &'static FdTable) -> F) -> F::Output where
     F: futures::Future,
     F::Output: Send + 'static,
 {
-    inject::inject(|client| {
+    inject::with_bootstrap(|client| {
         FD_TABLE.with(|tbl| {
             func(&client, tbl)
         })
     })
+}
+
+pub fn with_fds<F>(func: impl Send + 'static + FnOnce(&'static FdTable) -> F) -> F::Output where
+    F: futures::Future,
+    F::Output: Send + 'static,
+{
+    inject::inject(|| FD_TABLE.with(|tbl| func(tbl)))
 }
 
 /// Allocate a fresh file descriptor.

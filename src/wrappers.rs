@@ -112,7 +112,6 @@ fn virt_open(path: PathBuf, _flags: c_int, _mode: mode_t) -> c_int {
     and_errno(vfs::with_fds_and_bootstrap(move |bs, fds| {
         let rootfs = bs.rootfs_request().send().pipeline.get_dir();
         let mut node = filesystem_capnp::node::Client { client: rootfs.client };
-        //let mut final_reply: Option<capnp::capability::RemotePromise<_>> = None;
         let mut final_reply = None;
         for component in path.components() {
 
